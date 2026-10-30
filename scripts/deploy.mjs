@@ -8,8 +8,14 @@ if (!id || !appUrl || !/^https:\/\//.test(appUrl) || appUrl.includes('replace-be
 const config = JSON.parse(readFileSync('wrangler.json', 'utf8'));
 config.main = resolve(config.main);
 config.assets.directory = resolve(config.assets.directory);
-config.d1_databases[0].database_id = id;
-config.d1_databases[0].migrations_dir = resolve('migrations');
+config.d1_databases = [
+  {
+    binding: 'DB',
+    database_name: 'ride-for-brains',
+    database_id: id,
+    migrations_dir: resolve('migrations'),
+  },
+];
 config.vars.APP_URL = appUrl.replace(/\/$/, '');
 mkdirSync('work', { recursive: true });
 writeFileSync('work/wrangler.deploy.json', JSON.stringify(config, null, 2));

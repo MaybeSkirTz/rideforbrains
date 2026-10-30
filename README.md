@@ -6,6 +6,8 @@ Le code comprend une interface publique, une scène neuronale Three.js, les insc
 
 **Statut : version locale fonctionnelle, ouverture réelle fermée.** Aucun compte Stripe ni domaine d’envoi n’a été configuré. Les tests de paiement utilisent des contrats HTTP contrôlés, pas un véritable compte Stripe test. Le déploiement Cloudflare n’a pas été effectué. Lire [l’état des fonctionnalités](docs/ETAT.md) et [les vérifications](docs/TESTS.md) avant toute ouverture.
 
+**Pour mettre le site en ligne pour la première fois : suivre le [guide pas à pas de zéro à l’ouverture](docs/DEMARRAGE-PAS-A-PAS.md).** Il utilise les nouvelles commandes `npm run cloudflare:database` et `npm run deploy`, qui évitent les modifications manuelles de l’identifiant D1 et de la première adresse du site.
+
 ## Démarrage local
 
 Node.js 22.12 ou plus récent, npm et Git sont nécessaires. Node 24 LTS convient.

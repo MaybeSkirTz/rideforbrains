@@ -6,7 +6,7 @@ Les tests tournent contre **Workerd + D1 via Miniflare**, par les véritables ro
 
 Les appels aux prestataires sont remplacés par des réponses HTTP explicites et toute autre sortie réseau est interdite. Il s’agit de tests d’intégration de l’application avec les contrats API; cela ne prouve pas qu’un compte Stripe test ou qu’un domaine Resend réel fonctionne.
 
-La suite finale de **35 scénarios a réussi**, sans échec ni scénario ignoré. Elle couvre :
+La suite finale de **41 scénarios a réussi**, sans échec ni scénario ignoré : 36 scénarios d’application et 5 scénarios de préparation de publication. Elle couvre :
 
 - les activités et paramètres fournis;
 - la connexion, l’usage unique du lien et les accès sans session;
@@ -24,6 +24,7 @@ La suite finale de **35 scénarios a réussi**, sans échec ni scénario ignoré
 - les erreurs d’envoi, la reprise avec la même clé et la distinction accepté/livré;
 - les remboursements partiels et complets, le rapprochement par webhook et le traitement de la file de remboursement;
 - les exports CSV et les demandes de contact/bénévolat.
+- le chargement du statut de session anonyme avant configuration externe, la récupération automatique de l’URL réelle du Worker, la conservation d’un secret existant, le passage d’un nouveau secret uniquement par stdin et l’arrêt avant publication en cas de connexion D1 invalide ou de migration échouée.
 
 Le résultat de la dernière exécution et les éventuels scénarios ajoutés sont disponibles dans `docs/TEST-RESULTS.txt` après validation finale.
 
@@ -49,3 +50,5 @@ Les formulaires et les boutons disposent de labels, les erreurs sont annoncées 
 - Recette de charge et restauration d’une sauvegarde vers une base distincte.
 
 Aucune transaction réelle, aucun remboursement réel et aucun courriel externe n’ont été exécutés pour ces tests.
+
+La nouvelle commande de publication a été vérifiée avec un exécuteur de commandes contrôlé. Elle n’a pas encore été exécutée contre le compte Cloudflare de Thomas; la connexion, la création de ressource et le premier déploiement distant restent à faire dans son terminal.

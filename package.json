@@ -11,10 +11,11 @@
     "build": "vite build --configLoader runner",
     "check": "tsc --noEmit",
     "build:worker": "vite build --config vite.worker.config.ts --configLoader runner",
-    "test": "npm run build:worker && vite build --config vite.tasks.config.ts --configLoader runner && node --test --test-concurrency=1 tests/app.test.mjs",
+    "test": "npm run build:worker && vite build --config vite.tasks.config.ts --configLoader runner && node --test --test-concurrency=1 tests/*.test.mjs",
     "db:local": "node scripts/db-local.mjs",
     "db:remote": "wrangler d1 migrations apply DB --remote",
-    "deploy": "npm run check && npm run build && wrangler deploy",
+    "cloudflare:database": "wrangler d1 create ride-for-brains --binding DB --update-config",
+    "deploy": "node scripts/publish.mjs",
     "admin": "node scripts/admin.mjs",
     "backup": "wrangler d1 export DB --remote --output=backup.sql"
   },

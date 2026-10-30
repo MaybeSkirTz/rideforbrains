@@ -216,6 +216,22 @@ test('Public configuration contains exactly the supplied activities and no inven
   assert.equal(r.data.activities.length, 5);
   assert.ok(r.data.activities.every((a) => a.price === 1500 && a.capacity === null));
 });
+test('A public visitor can load the session endpoint before external sign-in is configured', async () => {
+  const visitor = new Miniflare({
+    modules: [{ type: 'ESModule', path: resolve('work/server/index.js') }],
+    compatibilityDate: '2026-07-30',
+    compatibilityFlags: ['nodejs_compat'],
+    bindings: { APP_ENV: 'production', APP_URL: 'https://example.test' },
+    serviceBindings: { ASSETS: () => new Response('test assets') },
+  });
+  try {
+    const r = await visitor.dispatchFetch('https://example.test/api/me');
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { user: null });
+  } finally {
+    await visitor.dispose();
+  }
+});
 test('Magic link authentication creates a verified account and cannot be reused', async () => {
   const u = await login();
   const row = await db.prepare('SELECT emailVerified FROM user WHERE id=?').bind(u.id).first();

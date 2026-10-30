@@ -77,6 +77,7 @@ async function botCheck(c: any, token: string | undefined) {
     fail(403, 'Vérification du formulaire échouée.');
 }
 async function actor(c: any): Promise<Actor> {
+  if (!c.req.header('cookie')) return fail(401, 'Connectez-vous pour continuer.');
   const session = await auth(c.env).api.getSession({ headers: c.req.raw.headers });
   if (!session?.user?.emailVerified) return fail(401, 'Connectez-vous pour continuer.');
   const staff = await c.env.DB.prepare('SELECT * FROM staff WHERE user_id=?')

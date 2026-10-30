@@ -4,12 +4,9 @@
 
 Le compte Cloudflare de Thomas existe, mais aucune ressource distante n’a été créée par cette session. Le dépôt est prévu pour un Worker avec ressources statiques et une base D1. Aucun abonnement payant n’est activé automatiquement.
 
-1. Installer les dépendances avec `npm ci`, puis se connecter avec `npx wrangler login`.
-2. Créer une base : `npx wrangler d1 create ride-for-brains`. Choisir la localisation souhaitée après examen des obligations de confidentialité. Reporter l’identifiant retourné dans `wrangler.json`, à la place du UUID nul. Pour GitHub Actions, définir la variable `CLOUDFLARE_D1_DATABASE_ID`.
-3. Définir l’URL HTTPS définitive dans `vars.APP_URL`. Une adresse `workers.dev` peut servir avant l’achat d’un domaine. Conserver `APP_ENV=production`. Garder `PAYMENTS_MODE=test` pendant les essais.
-4. Appliquer le schéma : `npm run db:remote`.
-5. Installer les secrets avec `npx wrangler secret put NOM_DU_SECRET` : le CLI les demande sur son entrée sécurisée. Ne pas les placer dans les commandes ni dans Git.
-6. Lancer `npm run check`, `npm test`, `npm run build`, puis `npx wrangler deploy`.
+**Première publication : suivre le [guide pas à pas](DEMARRAGE-PAS-A-PAS.md).** Il remplace l’ancienne procédure manuelle. Après `npm ci` et `npx wrangler login`, `npm run cloudflare:database` crée la base et configure sa connexion `DB`. `npm run deploy` vérifie et compile le projet, applique les migrations, publie le vrai Worker, récupère son adresse et crée le secret de connexion uniquement s’il n’existe pas. Aucun modèle Hello World n’est nécessaire. La configuration initiale ne contient plus de base fictive ni d’ancien identifiant à réutiliser.
+
+Le secret est fourni au CLI sur son entrée standard, jamais dans les arguments ni dans Git. Les services externes sont configurés séparément selon les sections suivantes. Les procédures GitHub Actions ci-dessous restent une option avancée pour une automatisation ultérieure; elles ne sont pas nécessaires au premier déploiement par PowerShell.
 
 Secrets/configuration à prévoir : `BETTER_AUTH_SECRET` (au moins 32 octets aléatoires), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `MAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`. Les valeurs publiques comme les identifiants Turnstile peuvent être des variables Workers; les clés API et secrets restent des secrets.
 
