@@ -2,11 +2,11 @@
 
 Application française de la deuxième édition : **21 août 2027**, accueil **7 h 30**, **18 ans et plus**, **15 $ CA par activité**, sans quota initial. Vélo 100 km, course 10 / 5 / 2 km et marche 5 km. Thomas est le contact principal. Le lieu et les horaires des départs restent à confirmer.
 
-Le code comprend une interface publique, une scène neuronale Three.js, les inscriptions individuelles ou groupées, une connexion par lien personnel Better Auth, un espace participant avec QR et une administration. Workers sert l’application et les API; D1 stocke les dossiers. Stripe Checkout et Resend sont intégrés côté serveur.
+Le code comprend une interface publique éditoriale, un système de scènes Three.js différées, les inscriptions individuelles ou groupées, une connexion par lien personnel Better Auth, un espace participant avec billet complet/QR et une administration. Workers sert l’application et ses métadonnées HTML; D1 stocke les dossiers. Stripe Checkout et Resend restent intégrés côté serveur.
 
-**Statut : version locale fonctionnelle, ouverture réelle fermée.** Aucun compte Stripe ni domaine d’envoi n’a été configuré. Les tests de paiement utilisent des contrats HTTP contrôlés, pas un véritable compte Stripe test. Le déploiement Cloudflare n’a pas été effectué. Lire [l’état des fonctionnalités](docs/ETAT.md) et [les vérifications](docs/TESTS.md) avant toute ouverture.
+**Statut : refonte du site existant sur la branche `codex/refonte-experience-2027`.** La production existe sur rideforbrains.ca; cette branche se vérifie dans une base locale isolée. Les paramètres et secrets de production sont conservés. Aucun paiement, remboursement ou courriel réel n’est déclenché par les tests. Lire la [livraison 2027 et sa configuration](docs/REFONTE-2027.md), les [audits](docs/AUDIT-2027.md) et les résultats des tests avant de promouvoir cette version.
 
-**Pour mettre le site en ligne pour la première fois : suivre le [guide pas à pas de zéro à l’ouverture](docs/DEMARRAGE-PAS-A-PAS.md).** `npm run cloudflare:database` relie la base existante ou la crée si elle manque. `npm run deploy` publie le site et configure sa première adresse. Ces commandes évitent les modifications manuelles des identifiants.
+**Pour mettre à jour le site actuel : suivre la [procédure de mise à jour](docs/REFONTE-2027.md).** Ne pas recréer le Worker, la base ou le domaine. Le [guide de première installation](docs/DEMARRAGE-PAS-A-PAS.md) reste disponible pour une installation indépendante.
 
 ## Démarrage local
 

@@ -1,0 +1,12 @@
+ALTER TABLE refund_jobs ADD COLUMN registration_id TEXT REFERENCES registrations(id);
+ALTER TABLE registrations ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE registrations ADD COLUMN transferred_user_id TEXT REFERENCES user(id);
+ALTER TABLE submissions ADD COLUMN details TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE submissions ADD COLUMN stage TEXT NOT NULL DEFAULT 'new';
+CREATE TABLE guest_drafts (token_hash TEXT PRIMARY KEY, ciphertext TEXT NOT NULL, expires_at INTEGER NOT NULL);
+CREATE INDEX guest_drafts_expiry ON guest_drafts(expires_at);
+CREATE TABLE funnel_daily (day TEXT NOT NULL, event TEXT NOT NULL, activity_id TEXT NOT NULL DEFAULT '', count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day,event,activity_id));
+CREATE TABLE registration_transfers (id TEXT PRIMARY KEY, registration_id TEXT NOT NULL REFERENCES registrations(id), token_hash TEXT NOT NULL UNIQUE, recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL DEFAULT (unixepoch()), accepted_at INTEGER);
+CREATE UNIQUE INDEX one_pending_transfer ON registration_transfers(registration_id) WHERE status='pending';
+CREATE TABLE offline_snapshots (id TEXT PRIMARY KEY, staff_id TEXT NOT NULL REFERENCES user(id), issued_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE offline_checkins (id TEXT PRIMARY KEY, snapshot_id TEXT NOT NULL REFERENCES offline_snapshots(id), registration_id TEXT NOT NULL, scanned_at INTEGER NOT NULL, result TEXT NOT NULL, processed_at INTEGER NOT NULL DEFAULT (unixepoch()));

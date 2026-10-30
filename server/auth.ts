@@ -10,6 +10,7 @@ import { isLocal, uuid } from './types';
 export const auth = (env: Env) =>
   betterAuth({
     appName: 'Ride For Brains',
+    logger: { disabled: true },
     baseURL: env.APP_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.APP_URL],

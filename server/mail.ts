@@ -95,6 +95,7 @@ export async function processMail(env: Env) {
           to: [row.recipient],
           subject: row.subject,
           text: row.body,
+          html: brandedMail(row.subject, row.body, env.APP_URL),
         }),
       });
       if (!res.ok) throw new Error('Prestataire HTTP ' + res.status);
@@ -118,4 +119,27 @@ export async function processMail(env: Env) {
         .run();
     }
   }
+}
+
+export function brandedMail(subject: string, body: string, origin: string) {
+  const esc = (s: string) =>
+    s.replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+    );
+  const text = esc(body)
+    .replace(
+      /https?:\/\/[^\s<]+/g,
+      (url) => '<a style="color:#185f57" href="' + url + '">' + url + '</a>',
+    )
+    .replace(/\r?\n/g, '<br>');
+  return (
+    '<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width"></head><body style="margin:0;background:#f5f4ed;color:#12312f;font-family:Arial,sans-serif"><table role="presentation" style="width:100%;max-width:600px;margin:auto"><tr><td style="padding:32px"><img src="' +
+    esc(origin) +
+    '/assets/ride-for-brains.png" alt="Ride For Brains" width="84" height="84"><h1 style="font-size:25px;line-height:1.2">' +
+    esc(subject) +
+    '</h1><p style="font-size:16px;line-height:1.65;overflow-wrap:anywhere">' +
+    text +
+    '</p><hr style="border:0;border-top:1px solid #bdc8bc"><p style="font-size:12px;line-height:1.5">Ride For Brains · Vélo, course et marche.<br>Les dons à Brain Canada sont effectués séparément des frais d’inscription.</p></td></tr></table></body></html>'
+  );
 }

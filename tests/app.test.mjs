@@ -28,7 +28,13 @@ before(async () => {
       PAYMENTS_MODE: 'test',
     },
     fetchMock: mock,
-    serviceBindings: { ASSETS: () => new Response('test assets') },
+    serviceBindings: {
+      ASSETS: () =>
+        new Response(
+          '<html><head><title>Ride For Brains</title></head><body><div id="root"></div></body></html>',
+          { headers: { 'Content-Type': 'text/html' } },
+        ),
+    },
   });
   db = await mf.getD1Database('DB');
   await migrate(db);
@@ -41,6 +47,11 @@ after(async () => {
 beforeEach(async () => {
   await db.batch(
     [
+      'offline_checkins',
+      'offline_snapshots',
+      'registration_transfers',
+      'guest_drafts',
+      'funnel_daily',
       'mail_events',
       'marketing_tokens',
       'unsubscribes',
@@ -1134,4 +1145,457 @@ test('Payment already fully refunded before its first webhook never issues a con
     (await db.prepare("SELECT COUNT(*) n FROM outbox WHERE dedupe LIKE 'confirmed:%'").first()).n,
     0,
   );
+});
+
+test('Account creation waits for verification and preserves the complete activity return URL', async () => {
+  const start = await request('/auth/request/create', {
+    email: 'new@example.test',
+    firstName: 'Alex',
+    lastName: 'Test',
+    returnTo: '/inscription?activite=course-10',
+  });
+  assert.equal(start.status, 200, JSON.stringify(start.data));
+  assert.equal(
+    await db.prepare("SELECT id FROM user WHERE email='new@example.test'").first(),
+    null,
+  );
+  const mail = await db
+    .prepare("SELECT body FROM outbox WHERE recipient='new@example.test'")
+    .first();
+  const link = mail.body.match(/http:\/\/[^\s]+/)[0];
+  const verified = await mf.dispatchFetch(link, { redirect: 'manual' });
+  assert.equal(verified.headers.get('location'), origin + '/inscription?activite=course-10');
+  const account = await db
+    .prepare("SELECT name,emailVerified FROM user WHERE email='new@example.test'")
+    .first();
+  assert.equal(account.name, 'Alex Test');
+  assert.equal(account.emailVerified, 1);
+});
+
+test('Existing-account sign-in asks for no name, preserves it, and returns to the waitlist', async () => {
+  await login('existing@example.test');
+  const r = await request('/auth/request/sign-in', {
+    email: 'existing@example.test',
+    returnTo: '/attente?activite=marche-5',
+  });
+  assert.equal(r.status, 200);
+  const mail = await db
+    .prepare(
+      "SELECT body FROM outbox WHERE recipient='existing@example.test' ORDER BY rowid DESC LIMIT 1",
+    )
+    .first();
+  const verified = await mf.dispatchFetch(mail.body.match(/http:\/\/[^\s]+/)[0], {
+    redirect: 'manual',
+  });
+  assert.equal(verified.headers.get('location'), origin + '/attente?activite=marche-5');
+  assert.equal(
+    (await db.prepare("SELECT name FROM user WHERE email='existing@example.test'").first()).name,
+    'Camille Test',
+  );
+});
+
+test('Unknown sign-in stays neutral without creating an account or verification token', async () => {
+  const r = await request('/auth/request/sign-in', { email: 'unknown@example.test' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data, { status: true });
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM user').first()).n, 0);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM verification').first()).n, 0);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM outbox').first()).n, 0);
+});
+
+test('Both account flows reject external and protocol-relative return destinations', async () => {
+  for (const returnTo of [
+    'https://evil.test',
+    '//evil.test',
+    '/\\evil.test',
+    '/inscription\nLocation: https://evil.test',
+    '/api/account/export',
+  ]) {
+    const r = await request('/auth/request/create', {
+      email: 'return@example.test',
+      firstName: 'Alex',
+      lastName: 'Test',
+      returnTo,
+    });
+    assert.equal(r.status, 400, returnTo);
+  }
+  const legacy = await request('/auth/sign-in/magic-link', {
+    email: 'return@example.test',
+    name: 'Alex',
+    callbackURL: 'https://evil.test',
+  });
+  assert.equal(legacy.status, 400);
+});
+
+test('A pre-account registration draft is encrypted, HttpOnly, private and claimed once after sign-in', async () => {
+  const p = {
+    ...participant('course-10'),
+    firstName: 'Private Guest',
+    emergencyName: 'Private Emergency',
+  };
+  const r = await request('/draft/guest', { participants: [p], promo: '' });
+  assert.equal(r.status, 200);
+  assert.match(r.res.headers.get('set-cookie'), /HttpOnly/i);
+  const guestCookie = r.res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ');
+  const saved = await db.prepare('SELECT * FROM guest_drafts').first();
+  assert.ok(!saved.ciphertext.includes('Private Guest'));
+  assert.ok(!saved.ciphertext.includes('Private Emergency'));
+  assert.ok(!saved.ciphertext.includes(p.emergencyPhone));
+  assert.equal((await request('/draft', null, guestCookie)).status, 401);
+  const u = await login();
+  const restored = await request('/draft', null, u.cookie + '; ' + guestCookie);
+  assert.equal(restored.data.participants[0].activityId, 'course-10');
+  assert.equal(restored.data.participants[0].firstName, 'Private Guest');
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM guest_drafts').first()).n, 0);
+});
+
+test('Funnel analytics stores aggregate counts and refuses PII and fake payment confirmations', async () => {
+  assert.equal(
+    (await request('/analytics', { event: 'activity_view', activityId: 'course-10' })).status,
+    200,
+  );
+  assert.equal(
+    (await request('/analytics', { event: 'activity_view', activityId: 'course-10' })).status,
+    200,
+  );
+  assert.equal(
+    (await request('/analytics', { event: 'visit', email: 'private@example.test' })).status,
+    400,
+  );
+  assert.equal((await request('/analytics', { event: 'payment_confirmed' })).status, 400);
+  const rows = await db.prepare('SELECT * FROM funnel_daily').all();
+  assert.equal(rows.results.length, 1);
+  assert.equal(rows.results[0].count, 2);
+  assert.deepEqual(Object.keys(rows.results[0]).sort(), ['activity_id', 'count', 'day', 'event']);
+});
+
+async function paidGroup(cookie) {
+  const o = await create(
+    cookie,
+    order([participant(), participant('course-10'), participant('marche-5')]),
+  );
+  const ss = await checkoutFixture(cookie, o.id);
+  mockSession(sessionFixture(o.id, ss, 4500));
+  assert.equal(
+    (
+      await signedEvent({
+        id: 'evt_group_' + randomUUID(),
+        type: 'checkout.session.completed',
+        data: { object: { id: ss } },
+      })
+    ).status,
+    200,
+  );
+  return o;
+}
+test('Cancelling one of three paid participations refunds exactly its price and preserves other tickets', async () => {
+  const u = await login(),
+    o = await paidGroup(u.cookie);
+  const rows = (
+    await db.prepare('SELECT * FROM registrations WHERE order_id=? ORDER BY id').bind(o.id).all()
+  ).results;
+  mock
+    .get('https://api.stripe.com')
+    .intercept({ path: '/v1/refunds', method: 'POST' })
+    .reply(200, (opts) => {
+      const b = new URLSearchParams(String(opts.body));
+      return {
+        id: 're_individual',
+        amount: Number(b.get('amount')),
+        payment_intent: 'pi_' + o.id,
+        status: 'pending',
+        metadata: { job_id: b.get('metadata[job_id]') },
+      };
+    });
+  const r = await request('/registrations/' + rows[0].id + '/cancel', { confirm: true }, u.cookie);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.refundRequested, 1500);
+  const job = await db
+    .prepare('SELECT * FROM refund_jobs WHERE registration_id=?')
+    .bind(rows[0].id)
+    .first();
+  assert.equal(job.amount, 1500);
+  assert.equal(
+    (await request('/registrations/' + rows[1].id + '/ticket', null, u.cookie)).status,
+    200,
+  );
+  const refund = {
+    id: 're_individual',
+    amount: 1500,
+    payment_intent: 'pi_' + o.id,
+    status: 'succeeded',
+    metadata: { job_id: job.id },
+  };
+  mock
+    .get('https://api.stripe.com')
+    .intercept({ path: '/v1/refunds/re_individual', method: 'GET' })
+    .reply(200, refund);
+  assert.equal(
+    (
+      await signedEvent({
+        id: 'evt_individual_refund',
+        type: 'refund.updated',
+        data: { object: { id: refund.id } },
+      })
+    ).status,
+    200,
+  );
+  const status = (
+    await db
+      .prepare('SELECT id,status,refunded_amount FROM registrations WHERE order_id=? ORDER BY id')
+      .bind(o.id)
+      .all()
+  ).results;
+  assert.equal(status[0].status, 'refunded');
+  assert.equal(status[0].refunded_amount, 1500);
+  assert.ok(status.slice(1).every((r) => r.status === 'confirmed'));
+  assert.equal(
+    (await request('/registrations/' + rows[0].id + '/ticket', null, u.cookie)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/registrations/' + rows[2].id + '/ticket', null, u.cookie)).status,
+    200,
+  );
+  assert.equal(
+    (await request('/registrations/' + rows[0].id + '/cancel', { confirm: true }, u.cookie)).data
+      .refundRequested,
+    0,
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM refund_jobs').first()).n, 1);
+});
+test('Individual cancellation under 15 days leaves the rest of a group valid and refunds zero', async () => {
+  const u = await login(),
+    s = JSON.parse(initialSettings);
+  s.eventAt = new Date(Date.now() + 14 * 86400000).toISOString();
+  await db.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+  await db.prepare('UPDATE activities SET price=0').run();
+  const o = await create(u.cookie, order([participant(), participant('course-10')]));
+  const rows = (await db.prepare('SELECT id FROM registrations WHERE order_id=?').bind(o.id).all())
+    .results;
+  const r = await request('/registrations/' + rows[0].id + '/cancel', { confirm: true }, u.cookie);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.refundRequested, 0);
+  assert.equal(
+    (await request('/registrations/' + rows[1].id + '/ticket', null, u.cookie)).status,
+    200,
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM refund_jobs').first()).n, 0);
+});
+test('Individual cancellation and offline preparation enforce ownership and staff permissions', async () => {
+  const u = await login(),
+    other = await login('other@example.test');
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(u.cookie);
+  const r = await db.prepare('SELECT id FROM registrations').first();
+  assert.equal(
+    (await request('/registrations/' + r.id + '/cancel', { confirm: true }, other.cookie)).status,
+    404,
+  );
+  assert.equal((await request('/admin/offline/snapshot', { confirm: true }, u.cookie)).status, 403);
+  assert.equal((await request('/admin/analytics', null, u.cookie)).status, 403);
+});
+test('Offline snapshots contain hashes only; sync is idempotent and distinguishes duplicate or cancelled tickets', async () => {
+  const u = await login(),
+    staff = await login('door@example.test', 'checkin');
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(u.cookie, order([participant(), participant('course-10')]));
+  const rows = (await db.prepare('SELECT id,ticket FROM registrations ORDER BY id').all()).results;
+  const snap = await request('/admin/offline/snapshot', { confirm: true }, staff.cookie);
+  assert.equal(snap.status, 200, JSON.stringify(snap.data));
+  assert.equal(snap.data.tickets.length, 2);
+  assert.ok(
+    snap.data.tickets.every(
+      (r) => r.hash.length === 64 && !r.ticket && !r.email && !r.emergency_name,
+    ),
+  );
+  const event = {
+      id: randomUUID(),
+      registrationId: rows[0].id,
+      scannedAt: Math.floor(Date.now() / 1000),
+    },
+    body = { snapshotId: snap.data.id, events: [event] };
+  assert.equal(
+    (await request('/admin/offline/sync', body, staff.cookie)).data.results[0].result,
+    'accepted',
+  );
+  assert.equal(
+    (await request('/admin/offline/sync', body, staff.cookie)).data.results[0].result,
+    'accepted',
+  );
+  assert.equal(
+    (
+      await request(
+        '/admin/offline/sync',
+        { ...body, events: [{ ...event, id: randomUUID() }] },
+        staff.cookie,
+      )
+    ).data.results[0].result,
+    'already_used',
+  );
+  await request('/registrations/' + rows[1].id + '/cancel', { confirm: true }, u.cookie);
+  assert.equal(
+    (
+      await request(
+        '/admin/offline/sync',
+        { ...body, events: [{ ...event, id: randomUUID(), registrationId: rows[1].id }] },
+        staff.cookie,
+      )
+    ).data.results[0].result,
+    'invalid',
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM offline_checkins').first()).n, 3);
+  await request('/admin/offline/revoke', { id: snap.data.id }, staff.cookie);
+  assert.equal((await request('/admin/offline/sync', body, staff.cookie)).status, 409);
+});
+test('Transfer API stays closed until a deadline is explicitly configured', async () => {
+  const u = await login();
+  assert.equal(
+    (
+      await request(
+        '/registrations/' + randomUUID() + '/transfer',
+        { recipient: 'new@example.test' },
+        u.cookie,
+      )
+    ).status,
+    409,
+  );
+});
+test('Transfer acceptance requires verified recipient and personal consents, then invalidates the old QR', async () => {
+  const buyer = await login(),
+    recipient = await login('recipient@example.test');
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(buyer.cookie);
+  const reg = await db.prepare('SELECT id,ticket FROM registrations').first(),
+    s = JSON.parse(initialSettings);
+  s.editorial = { transfersEnabled: true, transferDeadline: Math.floor(Date.now() / 1000) + 86400 };
+  await db.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+  const invitation = await request(
+    '/registrations/' + reg.id + '/transfer',
+    { recipient: 'recipient@example.test' },
+    buyer.cookie,
+  );
+  assert.equal(invitation.status, 201, JSON.stringify(invitation.data));
+  const token = new URL(invitation.data.url).searchParams.get('invitation');
+  assert.equal((await request('/transfers/' + token, null, buyer.cookie)).status, 404);
+  const body = {
+    termsVersion,
+    participant: participant('course-5', {
+      email: 'recipient@example.test',
+      firstName: 'Alex',
+      lastName: 'Recipient',
+    }),
+  };
+  assert.equal(
+    (
+      await request(
+        '/transfers/' + token + '/accept',
+        { ...body, participant: { ...body.participant, conditions: false } },
+        recipient.cookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await request('/transfers/' + token + '/accept', body, recipient.cookie)).status,
+    200,
+  );
+  const changed = await db
+    .prepare('SELECT ticket,transferred_user_id FROM registrations WHERE id=?')
+    .bind(reg.id)
+    .first();
+  assert.notEqual(changed.ticket, reg.ticket);
+  assert.equal(changed.transferred_user_id, recipient.id);
+  assert.equal(
+    (await request('/registrations/' + reg.id + '/ticket', null, buyer.cookie)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/registrations/' + reg.id + '/ticket', null, recipient.cookie)).status,
+    200,
+  );
+  assert.equal(
+    (await request('/transfers/' + token + '/accept', body, recipient.cookie)).status,
+    409,
+  );
+});
+test('CRM details remain private and enforce kind-specific stages', async () => {
+  const admin = await login('admin@example.test', 'admin');
+  const r = await request('/submissions', {
+    kind: 'sponsor',
+    name: 'Example',
+    email: 'sponsor@example.test',
+    message: 'Fixture partenaire',
+    consent: true,
+  });
+  assert.equal(
+    (
+      await request(
+        '/admin/submissions/' + r.data.id,
+        {
+          stage: 'interested',
+          details: {
+            company: 'Fixture privée',
+            amount: 500,
+            paymentReceived: false,
+            notes: 'private-note',
+          },
+        },
+        admin.cookie,
+        'PATCH',
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request('/admin/submissions/' + r.data.id, { stage: 'present' }, admin.cookie, 'PATCH'))
+      .status,
+    400,
+  );
+  assert.ok(!JSON.stringify((await request('/public')).data).includes('private-note'));
+  const stats = await request('/admin/analytics', null, admin.cookie);
+  assert.equal(stats.status, 200, JSON.stringify(stats.data));
+  assert.ok(Array.isArray(stats.data.daily));
+  assert.equal((await request('/admin/health', null, admin.cookie)).status, 200);
+});
+test('Server social metadata, sitemap and calendars use D1 facts and keep participant pages noindex', async () => {
+  const page = await mf.dispatchFetch(origin + '/activites/course-10');
+  const html = await page.text();
+  assert.equal(page.status, 200);
+  assert.match(html, /og:image/);
+  assert.match(html, /15/);
+  assert.match(html, /Course/);
+  assert.ok(!html.includes('"location":'));
+  assert.ok(html.includes('application/ld+json'));
+  const privatePage = await mf.dispatchFetch(origin + '/espace');
+  assert.equal(privatePage.headers.get('X-Robots-Tag'), 'noindex, nofollow');
+  const sitemap = await (await mf.dispatchFetch(origin + '/sitemap.xml')).text();
+  assert.ok(sitemap.includes('/velo'));
+  assert.ok(sitemap.includes('/activites/course-10'));
+  assert.ok(!sitemap.includes('/admin'));
+  const ics = await (await mf.dispatchFetch(origin + '/calendrier.ics')).text();
+  assert.match(ics, /DTSTART:20270821T113000Z/);
+  assert.ok(!ics.includes('LOCATION:'));
+});
+
+test('Media upload stays protected and reports an absent storage binding explicitly', async () => {
+  const user = await login(),
+    admin = await login('media@example.test', 'admin');
+  assert.equal((await request('/admin/media', { data: 'ZmFrZQ==' }, user.cookie)).status, 403);
+  assert.equal((await request('/admin/media', { data: 'ZmFrZQ==' }, admin.cookie)).status, 503);
+});
+test('HTML metadata escapes editorial markup and private routes expose no invitation or query token', async () => {
+  const s = JSON.parse(initialSettings);
+  s.title = 'Unsafe </title><script>alert(1)</script>';
+  await db.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+  const page = await mf.dispatchFetch(origin + '/');
+  const html = await page.text();
+  assert.ok(!html.includes('<script>alert(1)'));
+  assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  const privatePage = await mf.dispatchFetch(origin + '/transfert?invitation=private-token');
+  assert.equal(privatePage.headers.get('X-Robots-Tag'), 'noindex, nofollow');
+  assert.ok(!(await privatePage.text()).includes('private-token'));
 });

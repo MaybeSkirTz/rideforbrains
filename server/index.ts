@@ -1,9 +1,19 @@
+import { bodyLimit } from 'hono/body-limit';
+import { transferRoutes } from './transfers';
+import { offlineRoutes } from './offline';
+import { extensions } from './extensions';
+import { publicDocument } from './seo';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import Stripe from 'stripe';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { Webhook } from 'svix';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { safeReturnUrl } from '../shared/navigation';
+import { editorial, published } from '../shared/editorial';
+import { digest, opaqueToken, seal, unseal } from './crypto';
+import { countEvent, funnelEvents } from './analytics';
 import type { AppContext, Env, Actor } from './types';
 import { isLocal, uuid, now, json, parse } from './types';
 import { auth } from './auth';
@@ -33,8 +43,17 @@ const audit = (env: Env, actor: string, action: string, target: string, detail: 
     json(detail),
   );
 
+app.use('/api/*', async (c, next) =>
+  bodyLimit({
+    maxSize: c.req.path === '/api/admin/media' ? 1400000 : 150000,
+    onError: (ctx) => ctx.json({ error: 'Requête trop volumineuse' }, 413),
+  })(c, next),
+);
 app.use('/api/*', async (c, next) => {
-  if (c.req.header('content-length') && Number(c.req.header('content-length')) > 150000)
+  if (
+    c.req.header('content-length') &&
+    Number(c.req.header('content-length')) > (c.req.path === '/api/admin/media' ? 1400000 : 150000)
+  )
     fail(413, 'Requête trop volumineuse');
   if (
     !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
@@ -119,8 +138,19 @@ async function staffActor(c: any, permission: string) {
   return a;
 }
 app.onError((e, c) => {
-  if (isLocal(c.env) && !(e instanceof HTTPException) && !(e instanceof z.ZodError))
-    console.error(e.name + ': ' + e.message);
+  if (!(e instanceof HTTPException) && !(e instanceof z.ZodError))
+    console.error(
+      JSON.stringify({
+        event: 'api_error',
+        route: c.req.routePath || '/api/*',
+        code: /D1_ERROR/.test(String(e))
+          ? 'D1_ERROR'
+          : /Stripe/.test(e.name)
+            ? 'STRIPE_ERROR'
+            : 'INTERNAL_ERROR',
+        requestId: uuid(),
+      }),
+    );
   if (e instanceof HTTPException) return c.json({ error: e.message }, e.status);
   if (e instanceof z.ZodError)
     return c.json(
@@ -150,7 +180,13 @@ app.get('/api/public', async (c) => {
     "SELECT a.*, f.fields, (SELECT COUNT(*) FROM registrations r WHERE r.activity_id=a.id AND (r.status IN ('confirmed','partially_refunded','refunding') OR (r.status='pending' AND r.expires_at>unixepoch()))) AS occupied FROM activities a JOIN forms f ON f.activity_id=a.id AND f.version=a.form_version WHERE a.enabled=1",
   ).all<any>();
   return c.json({
-    settings: s,
+    settings: {
+      ...s,
+      editorial: editorial(s),
+      faq: published(s.faq),
+      partners: published(s.partners),
+      photos: published(s.photos),
+    },
     activities: rows.results.map((a) => ({
       ...a,
       route: parse(a.route),
@@ -168,12 +204,62 @@ app.get('/api/public', async (c) => {
     },
   });
 });
+const accountRequest = z
+  .object({
+    email,
+    firstName: z.string().trim().min(1).max(100).optional(),
+    lastName: z.string().trim().min(1).max(100).optional(),
+    returnTo: z.string().max(1500).optional(),
+    turnstileToken: z.string().optional(),
+  })
+  .strict();
+app.post('/api/auth/request/:intent', async (c) => {
+  const intent = z.enum(['create', 'sign-in']).parse(c.req.param('intent'));
+  const input = accountRequest.parse(await c.req.json());
+  if (intent === 'create' && (!input.firstName || !input.lastName))
+    fail(400, 'Le prénom et le nom sont requis pour créer votre compte.');
+  const callbackURL = safeReturnUrl(input.returnTo || '/espace', '');
+  if (!callbackURL) fail(400, 'Cette destination de retour n’est pas autorisée.');
+  if (!isLocal(c.env) && (!c.env.RESEND_API_KEY || !c.env.MAIL_FROM))
+    fail(503, 'La connexion par courriel n’est pas encore activée. Contactez l’organisation.');
+  await limited(c.env, 'login:' + (c.req.header('cf-connecting-ip') || 'local'), 5, 600);
+  await botCheck(c, input.turnstileToken);
+  const existing = await c.env.DB.prepare('SELECT id FROM user WHERE email=? AND emailVerified=1')
+    .bind(input.email)
+    .first();
+  // Same outward response: requesting sign-in must never create a new account or disclose its existence.
+  if (intent === 'sign-in' && !existing) return c.json({ status: true });
+  const headers = new Headers(c.req.raw.headers);
+  headers.delete('content-length');
+  const res = await auth(c.env).handler(
+    new Request(new URL('/api/auth/sign-in/magic-link', c.env.APP_URL), {
+      method: 'POST',
+      headers,
+      body: json({
+        email: input.email,
+        ...(intent === 'create' ? { name: input.firstName + ' ' + input.lastName } : {}),
+        callbackURL,
+        errorCallbackURL: '/connexion?erreur=lien',
+      }),
+    }),
+  );
+  if (!res.ok)
+    return c.json(
+      { error: 'Le lien n’a pas pu être demandé. Réessayez dans quelques minutes.' },
+      res.status as any,
+    );
+  c.executionCtx.waitUntil(countEvent(c.env, 'account_request').catch(() => {}));
+  return c.json({ status: true });
+});
 app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
   if (c.req.path.endsWith('/sign-in/magic-link') && c.req.method === 'POST') {
     if (!isLocal(c.env) && (!c.env.RESEND_API_KEY || !c.env.MAIL_FROM))
       fail(503, 'La connexion par courriel n’est pas encore activée. Contactez l’organisation.');
     await limited(c.env, 'login:' + (c.req.header('cf-connecting-ip') || 'local'), 5, 600);
     const input = (await c.req.raw.clone().json()) as any;
+    for (const field of ['callbackURL', 'newUserCallbackURL', 'errorCallbackURL'])
+      if (input[field] && !safeReturnUrl(input[field], ''))
+        fail(400, 'Cette destination de retour n’est pas autorisée.');
     await botCheck(c, input.turnstileToken);
   }
   return auth(c.env).handler(c.req.raw);
@@ -262,10 +348,77 @@ const draftSchema = z.object({
 });
 app.get('/api/draft', async (c) => {
   const a = await actor(c);
-  const r = await c.env.DB.prepare('SELECT data,updated_at FROM drafts WHERE user_id=?')
+  let r = await c.env.DB.prepare('SELECT data,updated_at FROM drafts WHERE user_id=?')
     .bind(a.id)
     .first<any>();
+  const token = getCookie(c, 'rfb_guest_draft');
+  if (token && /^[a-f0-9]{64}$/.test(token)) {
+    const hash = await digest(token);
+    const guest = await c.env.DB.prepare(
+      'SELECT ciphertext FROM guest_drafts WHERE token_hash=? AND expires_at>?',
+    )
+      .bind(hash, now())
+      .first<any>();
+    if (guest) {
+      const draft = draftSchema.parse(await unseal(guest.ciphertext, c.env.BETTER_AUTH_SECRET));
+      const claimed = await c.env.DB.batch([
+        c.env.DB.prepare(
+          'INSERT INTO drafts(user_id,data) SELECT ?,? WHERE EXISTS(SELECT 1 FROM guest_drafts WHERE token_hash=? AND expires_at>unixepoch()) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data,updated_at=unixepoch()',
+        ).bind(a.id, json(draft), hash),
+        c.env.DB.prepare('DELETE FROM guest_drafts WHERE token_hash=?').bind(hash),
+      ]);
+      if (claimed[0].meta.changes) r = { data: json(draft), updated_at: now() };
+    }
+    deleteCookie(c, 'rfb_guest_draft', { path: '/api' });
+  }
   return c.json(r ? { ...parse(r.data), updatedAt: r.updated_at } : null);
+});
+app.post('/api/draft/guest', async (c) => {
+  await limited(c.env, 'guest-draft:' + (c.req.header('cf-connecting-ip') || 'local'), 8, 600);
+  const draft = draftSchema.parse(await c.req.json());
+  if (json(draft).length > 30000) fail(413, 'Le brouillon est trop volumineux.');
+  for (const p of draft.participants) {
+    const f = await c.env.DB.prepare('SELECT fields FROM forms WHERE activity_id=? AND version=?')
+      .bind(p.activityId, p.formVersion)
+      .first<any>();
+    if (!f) fail(400, 'Formulaire introuvable');
+    const ids = new Set(parse(f.fields, []).map((f: any) => f.id));
+    p.answers = Object.fromEntries(Object.entries(p.answers).filter(([key]) => ids.has(key)));
+  }
+  const old = getCookie(c, 'rfb_guest_draft');
+  const token = old && /^[a-f0-9]{64}$/.test(old) ? old : opaqueToken();
+  await c.env.DB.prepare(
+    'INSERT INTO guest_drafts(token_hash,ciphertext,expires_at) VALUES(?,?,?) ON CONFLICT(token_hash) DO UPDATE SET ciphertext=excluded.ciphertext,expires_at=excluded.expires_at',
+  )
+    .bind(await digest(token), await seal(draft, c.env.BETTER_AUTH_SECRET), now() + 7200)
+    .run();
+  setCookie(c, 'rfb_guest_draft', token, {
+    httpOnly: true,
+    secure: !isLocal(c.env),
+    sameSite: 'Lax',
+    path: '/api',
+    maxAge: 7200,
+  });
+  return c.json({ saved: true, expiresIn: 7200 });
+});
+app.post('/api/analytics', async (c) => {
+  const input = z
+    .object({
+      event: z.enum(funnelEvents).exclude(['payment_confirmed']),
+      activityId: z.string().max(50).optional(),
+    })
+    .strict()
+    .parse(await c.req.json());
+  await limited(c.env, 'analytics:' + (c.req.header('cf-connecting-ip') || 'local'), 90, 60);
+  if (
+    input.activityId &&
+    !(await c.env.DB.prepare('SELECT id FROM activities WHERE id=? AND enabled=1')
+      .bind(input.activityId)
+      .first())
+  )
+    fail(400, 'Activité inconnue');
+  await countEvent(c.env, input.event, input.activityId);
+  return c.json({ recorded: true });
 });
 app.put('/api/draft', async (c) => {
   const a = await actor(c);
@@ -457,7 +610,7 @@ app.get('/api/registrations', async (c) => {
   const a = await actor(c);
   const rows = (
     await c.env.DB.prepare(
-      'SELECT r.*,a.name AS activity_name,a.distance,a.sport,o.amount AS order_amount,o.refunded,o.status AS order_status FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE o.user_id=? ORDER BY r.created_at DESC',
+      'SELECT r.*,a.name AS activity_name,a.distance,a.sport,o.amount AS order_amount,o.refunded,o.status AS order_status FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE COALESCE(r.transferred_user_id,o.user_id)=? ORDER BY r.created_at DESC',
     )
       .bind(a.id)
       .all<any>()
@@ -483,7 +636,7 @@ app.patch('/api/registrations/:id', async (c) => {
   const a = await actor(c);
   const s = await settings(c.env);
   const r = await c.env.DB.prepare(
-    'SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND o.user_id=?',
+    'SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=?',
   )
     .bind(c.req.param('id'), a.id)
     .first<any>();
@@ -514,12 +667,12 @@ app.patch('/api/registrations/:id', async (c) => {
 app.get('/api/registrations/:id/ticket', async (c) => {
   const a = await actor(c);
   const r = await c.env.DB.prepare(
-    "SELECT r.id,r.ticket,r.first_name,r.last_name,a.name,a.distance FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE r.id=? AND o.user_id=? AND r.status IN ('confirmed','partially_refunded')",
+    "SELECT r.id,r.ticket,r.first_name,r.last_name,r.activity_snapshot,o.event_snapshot,a.name,a.distance FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=? AND r.status IN ('confirmed','partially_refunded')",
   )
     .bind(c.req.param('id'), a.id)
     .first<any>();
   if (!r) fail(404, 'Billet indisponible');
-  return c.json(r);
+  return c.json({ ...r, ...parse(r.activity_snapshot), event: parse(r.event_snapshot) });
 });
 app.post('/api/orders/:id/cancel', async (c) => {
   const a = await actor(c);
@@ -542,7 +695,9 @@ app.post('/api/orders/:id/cancel', async (c) => {
     c.env.DB.prepare(
       "UPDATE orders SET status=? WHERE id=? AND status IN ('confirmed','partially_refunded')",
     ).bind(status, o.id),
-    c.env.DB.prepare('UPDATE registrations SET status=? WHERE order_id=?').bind(status, o.id),
+    c.env.DB.prepare(
+      "UPDATE registrations SET status=? WHERE order_id=? AND status IN ('confirmed','partially_refunded')",
+    ).bind(status, o.id),
     audit(c.env, a.id, 'cancellation.requested', o.id, { eligible, amount }),
   ];
   if (amount > 0)
@@ -1023,15 +1178,55 @@ app.get('/api/admin/submissions', async (c) => {
 });
 app.patch('/api/admin/submissions/:id', async (c) => {
   const a = await staffActor(c, 'submissions');
+  const row = await c.env.DB.prepare('SELECT kind,details,stage,status FROM submissions WHERE id=?')
+    .bind(c.req.param('id'))
+    .first<any>();
+  if (!row) fail(404, 'Demande introuvable');
+  const detailSchema = z
+    .object({
+      company: z.string().max(200).optional(),
+      contact: z.string().max(200).optional(),
+      phone: z.string().max(40).optional(),
+      amount: z.number().min(0).max(10000000).optional(),
+      level: z.string().max(100).optional(),
+      paymentReceived: z.boolean().optional(),
+      logoReceived: z.boolean().optional(),
+      contractReceived: z.boolean().optional(),
+      availability: z.string().max(1000).optional(),
+      role: z.string().max(150).optional(),
+      sector: z.string().max(150).optional(),
+      shift: z.string().max(150).optional(),
+      arrival: z.string().max(100).optional(),
+      supervisor: z.string().max(150).optional(),
+      notes: z.string().max(5000).optional(),
+    })
+    .strict();
   const x = z
-    .object({ status: z.enum(['new', 'in_progress', 'closed']) })
+    .object({
+      status: z.enum(['new', 'in_progress', 'closed']).optional(),
+      stage: z.string().max(30).optional(),
+      details: detailSchema.optional(),
+    })
+    .strict()
     .parse(await c.req.json());
+  const allowed =
+    row.kind === 'sponsor'
+      ? ['new', 'contacted', 'interested', 'confirmed', 'declined']
+      : row.kind === 'volunteer'
+        ? ['new', 'accepted', 'assigned', 'confirmed', 'present', 'cancelled']
+        : ['new'];
+  if (x.stage && !allowed.includes(x.stage)) fail(400, 'Étape invalide');
   await c.env.DB.batch([
-    c.env.DB.prepare('UPDATE submissions SET status=? WHERE id=?').bind(
-      x.status,
+    c.env.DB.prepare('UPDATE submissions SET status=?,stage=?,details=? WHERE id=?').bind(
+      x.status || row.status,
+      x.stage || row.stage,
+      x.details ? json(x.details) : row.details,
       c.req.param('id'),
     ),
-    audit(c.env, a.id, 'submission.updated', c.req.param('id'), x),
+    audit(c.env, a.id, 'submission.updated', c.req.param('id'), {
+      fields: Object.keys(x),
+      stage: x.stage || row.stage,
+    }),
   ]);
   return c.json({ ok: true });
 });
@@ -1077,7 +1272,7 @@ async function recipients(env: Env, input: any) {
       : "r.status IN ('confirmed','partially_refunded')";
   const rows = (
     await env.DB.prepare(
-      'SELECT r.*,o.user_id,a.name AS activity_name FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE ' +
+      'SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id,a.name AS activity_name FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE ' +
         where,
     )
       .bind(...(input.ids?.length ? input.ids : input.activityId ? [input.activityId] : []))
@@ -1194,7 +1389,7 @@ app.get('/api/admin/audit', async (c) => {
 app.post('/api/admin/resend/:id', async (c) => {
   const a = await staffActor(c, 'communications');
   const r = await c.env.DB.prepare(
-    "SELECT r.*,o.user_id FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
+    "SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
   )
     .bind(c.req.param('id'))
     .first<any>();
@@ -1217,7 +1412,7 @@ app.get('/api/account/export', async (c) => {
   const a = await actor(c);
   const regs = (
     await c.env.DB.prepare(
-      'SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE o.user_id=?',
+      'SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE COALESCE(r.transferred_user_id,o.user_id)=?',
     )
       .bind(a.id)
       .all<any>()
@@ -1253,6 +1448,7 @@ app.post('/api/webhooks/stripe', async (c) => {
       Stripe.createSubtleCryptoProvider(),
     );
   } catch {
+    console.warn(JSON.stringify({ event: 'stripe_webhook_rejected', code: 'INVALID_SIGNATURE' }));
     fail(400, 'Signature Stripe invalide');
   }
   await handleStripeEvent(c.env, event!);
@@ -1268,6 +1464,7 @@ app.post('/api/webhooks/resend', async (c) => {
       'svix-signature': c.req.header('svix-signature') || '',
     });
   } catch {
+    console.warn(JSON.stringify({ event: 'resend_webhook_rejected', code: 'INVALID_SIGNATURE' }));
     fail(400, 'Signature courriel invalide');
   }
   const id = c.req.header('svix-id')!;
@@ -1283,17 +1480,18 @@ app.post('/api/webhooks/resend', async (c) => {
   ]);
   return c.json({ ok: true });
 });
+transferRoutes(app, { actor, settings, audit, fail, limited });
+offlineRoutes(app, { staffActor, audit, fail });
+extensions(app, { actor, staffActor, settings, audit, fail, limited });
 app.all('/api/*', (c) => c.json({ error: 'Route introuvable' }, 404));
 app.get('*', async (c) => {
-  const res = await c.env.ASSETS.fetch(c.req.raw);
+  const res = await publicDocument(c.req.raw, c.env);
   const headers = new Headers(res.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   headers.set('X-Frame-Options', 'DENY');
-  headers.set(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
-  );
+  if (c.env.APP_URL.startsWith('https:'))
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   return new Response(res.body, { status: res.status, headers });
 });
 export async function scheduled(env: Env) {
@@ -1307,6 +1505,10 @@ export async function scheduled(env: Env) {
     env.DB.prepare('DELETE FROM rate_limits WHERE reset_at<unixepoch()-86400'),
     env.DB.prepare('DELETE FROM verification WHERE expiresAt<?').bind(Date.now() - 86400000),
     env.DB.prepare('DELETE FROM session WHERE expiresAt<?').bind(Date.now() - 86400000),
+    env.DB.prepare('DELETE FROM guest_drafts WHERE expires_at<unixepoch()'),
+    env.DB.prepare(
+      "UPDATE registration_transfers SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
+    ),
   ]);
   await processRefunds(env);
   await processMail(env);
@@ -1314,5 +1516,11 @@ export async function scheduled(env: Env) {
 export default {
   fetch: app.fetch,
   scheduled: (_controller: ScheduledController, env: Env, ctx: ExecutionContext) =>
-    ctx.waitUntil(scheduled(env)),
+    ctx.waitUntil(
+      scheduled(env)
+        .then(() => console.info(JSON.stringify({ event: 'cron_completed' })))
+        .catch(() =>
+          console.error(JSON.stringify({ event: 'cron_failed', code: 'MAINTENANCE_ERROR' })),
+        ),
+    ),
 };

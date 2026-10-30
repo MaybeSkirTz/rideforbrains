@@ -1,3 +1,8 @@
+import RouteEditor from './RouteEditor';
+import OfflineCheckin from './OfflineCheckin';
+import AdminInsights from './AdminInsights';
+import SubmissionDetails from './SubmissionDetails';
+import ContentEditor from './ContentEditor';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
@@ -23,7 +28,8 @@ import {
   Search,
   Eye,
 } from 'lucide-react';
-import { useApp, Page, Link, Button, Field, Notice, DynamicFields } from './main';
+import { useApp } from './context';
+import { Page, Link, Button, Field, Notice, DynamicFields } from './ui';
 import { api, money, statuses, date } from './api';
 
 type Feedback = {
@@ -202,6 +208,7 @@ function Overview({ setError }: Feedback) {
           ))}
         </Notice>
       )}
+      <AdminInsights />
       <h3>Par activité et statut</h3>
       <div className="table-wrap">
         <table>
@@ -720,24 +727,7 @@ function Settings({ setError, setMessage }: Feedback) {
           <Field label="Texte sur la cause">
             <textarea rows={4} value={s.cause} onChange={(e) => change('cause', e.target.value)} />
           </Field>
-          <JsonField
-            label="Questions fréquentes"
-            hint='Tableau de { "q": "Question", "a": "Réponse" }'
-            value={s.faq}
-            change={(v: any) => change('faq', v)}
-          />
-          <JsonField
-            label="Photos réelles de l’événement"
-            hint='Tableau de { "url": "https://…", "alt": "Description" }. Publiez uniquement les photos autorisées.'
-            value={s.photos}
-            change={(v: any) => change('photos', v)}
-          />
-          <JsonField
-            label="Partenaires validés"
-            hint='Tableau de { "name": "Nom", "url": "https://…", "logo": "https://…" }'
-            value={s.partners}
-            change={(v: any) => change('partners', v)}
-          />
+          <ContentEditor settings={s} change={change} />
         </details>
         <details className="settings-details">
           <summary>Conditions, confidentialité et validations</summary>
@@ -981,6 +971,7 @@ function ActivityEditor({ activity, saved, setError }: any) {
             }
           />
         </Field>
+        <RouteEditor route={a.route} change={(v) => set('route', v)} />
         <Button busy={busy}>Enregistrer cette activité</Button>
       </form>
     </details>
@@ -1562,7 +1553,8 @@ function Checkin({ setError, setMessage, canUndo }: Feedback & { canUndo: boolea
     [q, setQ] = useState(''),
     [matches, setMatches] = useState<any[]>([]),
     [result, setResult] = useState<any>(null),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [outcome, setOutcome] = useState('');
   const stop = () => {
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
@@ -1623,12 +1615,15 @@ function Checkin({ setError, setMessage, canUndo }: Feedback & { canUndo: boolea
     setBusy(true);
     setError('');
     setResult(null);
+    setOutcome('pending');
     try {
       const r = await api('/admin/checkin', { ticket: value, undo });
       setResult(r);
+      setOutcome(undo ? 'pending' : 'accepted');
       setMessage(undo ? 'Présence annulée.' : 'Présence enregistrée.');
     } catch (e) {
       setError((e as Error).message);
+      setOutcome((e as Error).message.includes('déjà') ? 'used' : 'invalid');
     } finally {
       setBusy(false);
     }
@@ -1636,6 +1631,23 @@ function Checkin({ setError, setMessage, canUndo }: Feedback & { canUndo: boolea
   return (
     <div className="checkin-layout">
       <h2>Bienvenue sur la ligne de départ.</h2>
+      <OfflineCheckin />
+      {outcome && (
+        <div className={'checkin-outcome ' + outcome} role="status">
+          <strong>
+            {
+              (
+                {
+                  pending: 'Vérification / intervention requise',
+                  accepted: 'Billet valide · présence confirmée',
+                  used: 'Billet déjà utilisé',
+                  invalid: 'Billet invalide · vérification requise',
+                } as any
+              )[outcome]
+            }
+          </strong>
+        </div>
+      )}
       <p className="small">
         Connexion Internet requise. Un billet déjà utilisé est refusé. Seules les inscriptions
         confirmées peuvent être accueillies.
@@ -1773,6 +1785,13 @@ function Submissions({ setError, setMessage }: Feedback) {
             </span>
           </summary>
           <p className="prewrap">{r.message}</p>
+          <SubmissionDetails
+            row={r}
+            onSaved={() => {
+              setMessage('Suivi enregistré.');
+              load();
+            }}
+          />
           <div className="actions">
             <a className="button" href={'mailto:' + r.email}>
               Répondre par courriel <ArrowUpRight size={15} />

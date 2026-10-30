@@ -1,92 +1,84 @@
+Campagne locale Workerd/D1 — 30 octobre 2026
+Prestataires simulés. Aucune transaction réelle.
 
-> ride-for-brains@0.1.0 test
-> npm run build:worker && vite build --config vite.tasks.config.ts --configLoader runner && node --test --test-concurrency=1 tests/*.test.mjs
-
-
-> ride-for-brains@0.1.0 build:worker
-> vite build --config vite.worker.config.ts --configLoader runner
-
-vite v7.3.7 building ssr environment for production...
-transforming...
-node_modules/zod/v4/core/util.js (400:0): A comment
-
-"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
-
-in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
-node_modules/zod/v4/core/regexes.js (74:0): A comment
-
-"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
- * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
- * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
-
-in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
-✓ 1578 modules transformed.
-rendering chunks...
-work/server/index.js  2,897.47 kB
-✓ built in 4.93s
-vite v7.3.7 building ssr environment for production...
-transforming...
-✓ 195 modules transformed.
-rendering chunks...
-work/tasks/index.js  672.39 kB
-✓ built in 814ms
-✔ Public configuration contains exactly the supplied activities and no invented place (1007.4138ms)
-✔ A public visitor can load the session endpoint before external sign-in is configured (305.7097ms)
-2026-10-30T02:07:57.107Z WARN [Better Auth]: Rate limiting could not determine a client IP and is falling back to a single shared per-path bucket. Ensure your runtime forwards a trusted client IP header, then set `advanced.ipAddress.ipAddressHeaders` or `advanced.ipAddress.trustedProxies` so the address can be resolved.
-✔ Magic link authentication creates a verified account and cannot be reused (176.1868ms)
-✔ Unauthenticated and foreign-origin mutations are rejected (60.1635ms)
-✔ Free registration is persisted, confirmed, has an opaque ticket and local confirmation (185.5605ms)
-✔ Paid registration stays pending even after visiting the success URL; signed payment confirms it (199.7788ms)
-Error: Rapprochement Stripe impossible
-✔ Invalid signature and wrong amount cannot confirm a payment (164.74ms)
-✔ Abandoned session expires; failed payment cannot create a ticket (184.0568ms)
-Error: D1_ERROR: CAPACITY_EXCEEDED: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
-✔ Two concurrent baskets for the last place produce one success and one atomic refusal (173.6686ms)
-Error: D1_ERROR: CAPACITY_EXCEEDED: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
-✔ Multi-person basket rolls back entirely when one activity is full (159.7713ms)
-✔ Idempotent basket creation produces one order (160.0016ms)
-✔ Late payment can confirm if a place remains; older expiration does not undo confirmation (183.0088ms)
-✔ Late paid session after quota was consumed is marked paid_review without issuing a ticket (211.5255ms)
-Error: D1_ERROR: PROMO_UNAVAILABLE: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
-✔ Invalid, expired and exhausted promotion codes are refused, and a 100% code is genuinely free (196.1454ms)
-✔ Forms and terms are validated server-side; medical or extra answers are not retained (166.3284ms)
-✔ Participant isolation blocks another person’s ticket and updates (212.2479ms)
-✔ Admin, organizer and check-in roles are enforced on every API (334.5282ms)
-✔ Valid ticket scans once; only authorized staff can undo a presence (275.5134ms)
-✔ Publishing a form preserves old snapshots and rejects stale submissions (198.9866ms)
-✔ Mail preview, explicit recipient count, local queue and deduplication all work (231.2807ms)
-✔ Marketing respects consent and unsubscribe, and privacy requests are recorded (231.457ms)
-✔ CSV export neutralizes spreadsheet formulas and logs the export (191.3257ms)
-✔ Contact and volunteer submissions are stored without pretending an email was sent (63.2158ms)
-✔ Refund webhook reconciles full and partial refunds and ignores duplicate events (176.9697ms)
-✔ Failed payment is separate from expiry and never issues a ticket (138.5197ms)
-✔ Drafts are private, retain partial input, and disappear after actual registration (204.6388ms)
-✔ Templates persist in shared storage with permissions (167.2088ms)
-✔ Original event policy remains attached to a paid order after event settings change (172.4068ms)
-✔ Cancellation under 15 days refunds zero and invalidates the ticket (166.0012ms)
-✔ Waitlist is a real stored request only when an activity is full (159.9158ms)
-✔ Reducing a quota below actual reservations is blocked in the database (138.5542ms)
-✔ Mail provider errors retry safely and acceptance is not misreported as delivery (766.9962ms)
-✔ Refund queue calls the provider with an idempotency key and reconciles a successful response (778.2626ms)
-✔ Server rejects a price changed after the participant reviewed the amount (119.2927ms)
-✔ Webhook recovers a session whose provider ID failed to persist at checkout creation (141.3679ms)
-✔ Payment already fully refunded before its first webhook never issues a confirmed ticket (166.2657ms)
-✔ Existing database is linked without create, delete, migration or data access (6.1579ms)
-✔ New database is created only after an authoritative empty list, then its actual ID is linked (3.6211ms)
-✔ Repeated setup is safe and does not create a duplicate database (4.2054ms)
-✔ Failed listing leaves the configuration untouched and never attempts creation (2.7344ms)
-✔ A configured different database is preserved when the account does not match (2.3006ms)
-✔ Setup recovers when another process creates the database between list and create (3.9233ms)
-✔ First publication applies migrations, captures the actual URL, and sends a new secret only through stdin (5.4165ms)
-✔ Later publication preserves a configured domain and existing authentication secret (2.1102ms)
-✔ Missing, duplicated or placeholder D1 bindings stop before any remote command (6.416ms)
-✔ A failed migration stops publication and does not change the URL (2.1544ms)
-✔ URL discovery never substitutes a preview URL or an unrelated Worker (0.3595ms)
-ℹ tests 47
+✔ API errors stay readable when an upstream server returns empty or HTML responses (22.9785ms)
+✔ API preserves structured errors and rejects empty success responses (1.5361ms)
+✔ Public configuration contains exactly the supplied activities and no invented place (2062.204ms)
+✔ A public visitor can load the session endpoint before external sign-in is configured (776.6528ms)
+✔ Magic link authentication creates a verified account and cannot be reused (428.5477ms)
+✔ Production sign-in returns a clear JSON error until both mail settings are present (1741.5447ms)
+✔ Production sign-in validates Turnstile, sends through Resend, and verifies a new account (2209.3738ms)
+✔ Unauthenticated and foreign-origin mutations are rejected (259.027ms)
+✔ Free registration is persisted, confirmed, has an opaque ticket and local confirmation (432.7946ms)
+✔ Paid registration stays pending even after visiting the success URL; signed payment confirms it (545.6378ms)
+✔ Invalid signature and wrong amount cannot confirm a payment (447.0864ms)
+✔ Abandoned session expires; failed payment cannot create a ticket (424.0869ms)
+✔ Two concurrent baskets for the last place produce one success and one atomic refusal (407.0936ms)
+✔ Multi-person basket rolls back entirely when one activity is full (418.627ms)
+✔ Idempotent basket creation produces one order (402.7328ms)
+✔ Late payment can confirm if a place remains; older expiration does not undo confirmation (484.6568ms)
+✔ Late paid session after quota was consumed is marked paid_review without issuing a ticket (537.4164ms)
+✔ Invalid, expired and exhausted promotion codes are refused, and a 100% code is genuinely free (462.4931ms)
+✔ Forms and terms are validated server-side; medical or extra answers are not retained (433.7827ms)
+✔ Participant isolation blocks another person’s ticket and updates (535.1911ms)
+✔ Admin, organizer and check-in roles are enforced on every API (796.5334ms)
+✔ Valid ticket scans once; only authorized staff can undo a presence (663.42ms)
+✔ Publishing a form preserves old snapshots and rejects stale submissions (538.7305ms)
+✔ Mail preview, explicit recipient count, local queue and deduplication all work (555.8606ms)
+✔ Marketing respects consent and unsubscribe, and privacy requests are recorded (644.03ms)
+✔ CSV export neutralizes spreadsheet formulas and logs the export (521.8371ms)
+✔ Contact and volunteer submissions are stored without pretending an email was sent (278.7318ms)
+✔ Refund webhook reconciles full and partial refunds and ignores duplicate events (518.3382ms)
+✔ Failed payment is separate from expiry and never issues a ticket (402.0798ms)
+✔ Drafts are private, retain partial input, and disappear after actual registration (495.7888ms)
+✔ Templates persist in shared storage with permissions (474.5233ms)
+✔ Original event policy remains attached to a paid order after event settings change (465.2081ms)
+✔ Cancellation under 15 days refunds zero and invalidates the ticket (438.7206ms)
+✔ Waitlist is a real stored request only when an activity is full (421.9681ms)
+✔ Reducing a quota below actual reservations is blocked in the database (406.386ms)
+✔ Mail provider errors retry safely and acceptance is not misreported as delivery (1981.6802ms)
+✔ Refund queue calls the provider with an idempotency key and reconciles a successful response (2097.9238ms)
+✔ Server rejects a price changed after the participant reviewed the amount (396.6575ms)
+✔ Webhook recovers a session whose provider ID failed to persist at checkout creation (414.5815ms)
+✔ Payment already fully refunded before its first webhook never issues a confirmed ticket (458.5326ms)
+✔ Account creation waits for verification and preserves the complete activity return URL (365.7871ms)
+✔ Existing-account sign-in asks for no name, preserves it, and returns to the waitlist (396.3439ms)
+✔ Unknown sign-in stays neutral without creating an account or verification token (318.0378ms)
+✔ Both account flows reject external and protocol-relative return destinations (288.5726ms)
+✔ A pre-account registration draft is encrypted, HttpOnly, private and claimed once after sign-in (395.5363ms)
+✔ Funnel analytics stores aggregate counts and refuses PII and fake payment confirmations (301.7032ms)
+✔ Cancelling one of three paid participations refunds exactly its price and preserves other tickets (606.7066ms)
+✔ Individual cancellation under 15 days leaves the rest of a group valid and refunds zero (481.9688ms)
+✔ Individual cancellation and offline preparation enforce ownership and staff permissions (505.4382ms)
+✔ Offline snapshots contain hashes only; sync is idempotent and distinguishes duplicate or cancelled tickets (643.2383ms)
+✔ Transfer API stays closed until a deadline is explicitly configured (342.3455ms)
+✔ Transfer acceptance requires verified recipient and personal consents, then invalidates the old QR (645.9177ms)
+✔ CRM details remain private and enforce kind-specific stages (470.9853ms)
+✔ Server social metadata, sitemap and calendars use D1 facts and keep participant pages noindex (310.2901ms)
+✔ Media upload stays protected and reports an absent storage binding explicitly (458.0802ms)
+✔ HTML metadata escapes editorial markup and private routes expose no invitation or query token (300.3992ms)
+✔ Existing database is linked without create, delete, migration or data access (7.5693ms)
+✔ New database is created only after an authoritative empty list, then its actual ID is linked (5.8641ms)
+✔ Repeated setup is safe and does not create a duplicate database (6.0995ms)
+✔ Failed listing leaves the configuration untouched and never attempts creation (3.7275ms)
+✔ A configured different database is preserved when the account does not match (3.6036ms)
+✔ Setup recovers when another process creates the database between list and create (5.6393ms)
+✔ Return destinations preserve activity and reject external, escaped and API paths (1.1395ms)
+✔ Countdown uses Toronto calendar days and never becomes negative (19.2964ms)
+✔ Calendar includes confirmed reception only, no invented location or ending, and folds UTF-8 safely (3.6617ms)
+✔ Editorial defaults reveal no invented photographs or statistics and visibility order is stable (0.7739ms)
+✔ Incremental platform migration preserves existing settings, paid registration and purchased policy (2097.6364ms)
+✔ First publication applies migrations, captures the actual URL, and sends a new secret only through stdin (6.9559ms)
+✔ Later publication preserves a configured domain and existing authentication secret (3.3028ms)
+✔ Missing, duplicated or placeholder D1 bindings stop before any remote command (8.1886ms)
+✔ A failed migration stops publication and does not change the URL (2.6945ms)
+✔ URL discovery never substitutes a preview URL or an unrelated Worker (0.1764ms)
+✔ All sixteen procedural scenes animate without invalid geometry on desktop and mobile (203.2106ms)
+ℹ tests 73
 ℹ suites 0
-ℹ pass 47
+ℹ pass 73
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 9313.81
+ℹ duration_ms 37189.4108

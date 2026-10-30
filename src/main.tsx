@@ -1,4 +1,14 @@
-import React, { useEffect, useState, lazy, Suspense, createContext, useContext } from 'react';
+import MotionToggle from './MotionToggle';
+import DevAudit from './DevAudit';
+import React, {
+  useEffect,
+  useState,
+  useRef,
+  lazy,
+  Suspense,
+  createContext,
+  useContext,
+} from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowUpRight,
@@ -28,6 +38,15 @@ import {
   Activity,
 } from 'lucide-react';
 import { api, money, statuses, date } from './api';
+import { Context, useApp, type Data } from './context';
+import { go, Link, Notice, Field, Button, Page, DynamicFields } from './ui';
+import { accountUrl } from '../shared/navigation';
+import { donationNotice } from '../shared/event';
+import Account from './Account';
+import { Home, Activities, Practical, Team, Cause, FAQ } from './Public';
+
+import Turnstile from './Turnstile';
+import { track } from './tracking';
 const eventDate = (s: any) =>
   new Date(s.eventAt).toLocaleDateString('fr-CA', {
     day: 'numeric',
@@ -36,62 +55,15 @@ const eventDate = (s: any) =>
     timeZone: 'America/Toronto',
   });
 import './styles.css';
-const Brain = lazy(() => import('./Brain'));
+import './editorial.css';
+const TicketPage = lazy(() => import('./TicketPage'));
 const Admin = lazy(() => import('./Admin'));
-type Data = { settings: any; activities: any[]; environment: string; services: any };
-const Context = createContext<{ data: Data; user: any; refresh: () => Promise<void> }>({} as any);
-export const useApp = () => useContext(Context);
-export function go(path: string) {
-  history.pushState({}, '', path);
-  dispatchEvent(new PopStateEvent('popstate'));
-  window.scrollTo({ top: 0, behavior: 'instant' });
-}
-export function Link({ to, children, className = '', ...rest }: any) {
-  return (
-    <a
-      href={to}
-      className={className}
-      onClick={(e) => {
-        if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
-          e.preventDefault();
-          go(to);
-        }
-      }}
-      {...rest}
-    >
-      {children}
-    </a>
-  );
-}
-export function Notice({ error, children }: any) {
-  return (
-    <div role={error ? 'alert' : 'status'} className={'notice ' + (error ? 'error' : '')}>
-      {children}
-    </div>
-  );
-}
-export function Field({ label, children, hint }: any) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint && <small>{hint}</small>}
-    </label>
-  );
-}
-export function Button({ children, busy = false, className = '', ...props }: any) {
-  return (
-    <button className={'button ' + className} disabled={busy || props.disabled} {...props}>
-      {busy ? 'Un instant…' : children}
-    </button>
-  );
-}
-
 function App() {
   const [data, setData] = useState<Data | null>(null),
     [user, setUser] = useState<any>(null),
     [error, setError] = useState(''),
-    [path, setPath] = useState(location.pathname);
+    [url, setUrl] = useState(location.pathname + location.search);
+  const path = url.split('?')[0];
   const refresh = async () => {
     const [d, u] = await Promise.all([api('/public'), api('/me')]);
     setData(d);
@@ -99,7 +71,7 @@ function App() {
   };
   useEffect(() => {
     refresh().catch((e) => setError(e.message));
-    const nav = () => setPath(location.pathname);
+    const nav = () => setUrl(location.pathname + location.search);
     addEventListener('popstate', nav);
     return () => removeEventListener('popstate', nav);
   }, []);
@@ -114,9 +86,19 @@ function App() {
       '/cause': 'La cause',
       '/equipe': 'Notre histoire',
     };
-    document.title = (name[path] ? name[path] + ' — ' : '') + 'Ride For Brains';
-    document.getElementById('main')?.focus();
-  }, [path]);
+    const selected = data?.activities.find((a) => path === '/activites/' + a.id);
+    document.title =
+      (selected
+        ? selected.name + ' · ' + selected.distance + ' · ' + money(selected.price) + ' — '
+        : name[path]
+          ? name[path] + ' — '
+          : '') + 'Ride For Brains';
+    document.getElementById('main')?.focus({ preventScroll: true });
+  }, [path, data]);
+  useEffect(() => {
+    if (user) track('account_verified');
+  }, [user]);
+
   if (error)
     return (
       <div className="loading">
@@ -136,9 +118,17 @@ function App() {
   if (path === '/') page = <Home />;
   else if (path === '/activites' || ['/velo', '/course', '/marche'].includes(path))
     page = <Activities sport={path === '/activites' ? null : path.slice(1)} />;
-  else if (path === '/inscription') page = <Registration />;
+  else if (path.startsWith('/activites/'))
+    page = <Activities selected={path.slice('/activites/'.length)} />;
+  else if (path === '/inscription') page = <Registration key={url} />;
   else if (path === '/attente') page = <Waitlist />;
-  else if (path === '/connexion') page = <Login />;
+  else if (path === '/connexion' || path === '/compte') page = <Account />;
+  else if (path.startsWith('/billet/'))
+    page = (
+      <Suspense fallback={<p>Chargement du billet…</p>}>
+        <TicketPage id={path.slice(8)} />
+      </Suspense>
+    );
   else if (path === '/espace') page = <Participant />;
   else if (path.startsWith('/admin'))
     page = (
@@ -150,10 +140,16 @@ function App() {
   else if (path === '/equipe') page = <Team />;
   else if (path === '/cause') page = <Cause />;
   else if (path === '/faq') page = <FAQ />;
-  else if (['/contact', '/benevolat', '/partenaires'].includes(path))
+  else if (['/contact', '/benevolat', '/benevoles', '/partenaires'].includes(path))
     page = (
       <Contact
-        kind={path === '/benevolat' ? 'volunteer' : path === '/partenaires' ? 'sponsor' : 'contact'}
+        kind={
+          ['/benevolat', '/benevoles'].includes(path)
+            ? 'volunteer'
+            : path === '/partenaires'
+              ? 'sponsor'
+              : 'contact'
+        }
       />
     );
   else if (['/confidentialite', '/conditions', '/annulation'].includes(path))
@@ -177,7 +173,11 @@ function App() {
       <main id="main" tabIndex={-1}>
         {page}
       </main>
+      <div className="motion-preference">
+        <MotionToggle />
+      </div>
       <Footer />
+      {data.environment === 'development' && <DevAudit />}
     </Context.Provider>
   );
 }
@@ -185,6 +185,9 @@ function Header({ path }: any) {
   const { data, user } = useApp();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
+  useEffect(() => {
+    if (open) document.querySelector<HTMLElement>('#primary-nav a')?.focus({ preventScroll: true });
+  }, [open]);
   return (
     <>
       {data.environment !== 'production' && (
@@ -199,7 +202,15 @@ function Header({ path }: any) {
           )}
         </div>
       )}
-      <header className="header">
+      <header
+        className="header"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && open) {
+            setOpen(false);
+            document.querySelector<HTMLElement>('.menu-toggle')?.focus({ preventScroll: true });
+          }
+        }}
+      >
         <Link to="/" className="brand" aria-label="Ride For Brains, accueil">
           <img src="/assets/ride-for-brains.png" alt="" />
           <span>
@@ -210,7 +221,11 @@ function Header({ path }: any) {
             </b>
           </span>
         </Link>
-        <nav aria-label="Navigation principale" className={open ? 'nav open' : 'nav'}>
+        <nav
+          id="primary-nav"
+          aria-label="Navigation principale"
+          className={open ? 'nav open' : 'nav'}
+        >
           <Link to="/activites" className={path === '/activites' ? 'active' : ''}>
             Les activités
           </Link>
@@ -229,6 +244,7 @@ function Header({ path }: any) {
           className="menu-toggle"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
+          aria-controls="primary-nav"
           aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
         >
           {open ? <X /> : <Menu />}
@@ -245,9 +261,9 @@ function Footer() {
         <div>
           <p className="eyebrow lime-text">ON SE RETROUVE SUR LA LIGNE DE DÉPART.</p>
           <h2>
-            Le mouvement
+            On se retrouve
             <br />
-            commence avec vous<span className="lime-text">.</span>
+            au départ<span className="lime-text">.</span>
           </h2>
         </div>
         <Link to="/inscription" className="button lime">
@@ -294,562 +310,6 @@ function Footer() {
       </div>
     </footer>
   );
-}
-function Home() {
-  const { data } = useApp();
-  const s = data.settings;
-  return (
-    <>
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">
-            <span className="live-dot" /> {s.edition.toLocaleUpperCase('fr-CA')}{' '}
-            <span className="sep">/</span> {eventDate(s).toLocaleUpperCase('fr-CA')}
-          </p>
-          <h1>
-            Pour eux.
-            <br />
-            Chaque
-            <br />
-            kilomètre <em>compte.</em>
-          </h1>
-          <p className="hero-description">
-            À vélo, à la course ou à la marche.
-            <br />
-            Un même élan pour la recherche sur le cerveau.
-          </p>
-          <div className="hero-actions">
-            <Link to="/inscription" className="button">
-              Je trouve mon défi <ArrowUpRight size={20} />
-            </Link>
-            <a href={s.donationUrl} className="text-link" target="_blank" rel="noopener noreferrer">
-              Faire un don <Heart size={17} />
-            </a>
-          </div>
-          <div className="hero-meta">
-            <span>
-              <CalendarDays size={17} />
-              {eventDate(s)}
-            </span>
-            <span>
-              <MapPin size={17} />
-              {s.location || 'Lieu à confirmer'}
-            </span>
-          </div>
-        </div>
-        <div className="hero-art">
-          <div className="orbital orbital-one" />
-          <div className="orbital orbital-two" />
-          <div className="hero-art-top">
-            <span>LE MOUVEMENT NOUS RELIE.</span>
-            <ArrowUpRight size={24} />
-          </div>
-          <div className="brain-fallback" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <Suspense fallback={null}>
-            <Brain />
-          </Suspense>
-          <div className="brain-caption">
-            <span className="crosshair">+</span>
-            <span>
-              DES CONNEXIONS.
-              <br />
-              UNE MÊME CAUSE.
-            </span>
-            <span className="crosshair">+</span>
-          </div>
-          <div className="edition-stamp">
-            ON BOUGE
-            <br />
-            <strong>ENSEMBLE.</strong>
-            <span>VÉLO · COURSE · MARCHE</span>
-          </div>
-        </div>
-      </section>
-      <div className="distance-strip">
-        <span>
-          <b>100</b> KM <small>VÉLO</small>
-        </span>
-        <i>✳</i>
-        <span>
-          <b>10 / 5 / 2</b> KM <small>COURSE</small>
-        </span>
-        <i>✳</i>
-        <span>
-          <b>5</b> KM <small>MARCHE</small>
-        </span>
-      </div>
-      <section className="section activities-home" id="activites">
-        <div className="section-heading">
-          <p className="eyebrow">01 — CHOISISSEZ VOTRE MOUVEMENT</p>
-          <div className="heading-row">
-            <h2>
-              Votre rythme.
-              <br />
-              Notre élan collectif.
-            </h2>
-            <p>
-              Une grande sortie ou quelques kilomètres.
-              <br />
-              Il y a plus d’une façon de faire partie
-              <br />
-              du mouvement.
-            </p>
-          </div>
-        </div>
-        <ActivityRows />
-      </section>
-      <section className="cause-split">
-        <div className="cause-visual">
-          <span className="eyebrow">POUR EUX. POUR DEMAIN.</span>
-          <img
-            src="/assets/ride-for-brains.png"
-            alt="Logo officiel Ride For Brains, deuxième édition"
-            loading="lazy"
-          />
-          <span className="small">Une initiative de l’équipe Ride For Brains.</span>
-        </div>
-        <div className="cause-copy">
-          <p className="eyebrow">02 — LA RAISON D’AVANCER</p>
-          <h2>
-            Plus qu’une
-            <br />
-            ligne d’arrivée.
-          </h2>
-          <p>{s.cause}</p>
-          <div className="brain-brand">
-            <img
-              src="/assets/brain-canada.png"
-              alt="Fondation Brain Canada Foundation"
-              loading="lazy"
-            />
-          </div>
-          <Link to="/cause" className="text-link">
-            Découvrir la cause <ArrowRight size={18} />
-          </Link>
-          <a href={s.donationUrl} className="button" target="_blank" rel="noopener noreferrer">
-            Soutenir la collecte <Heart size={17} />
-          </a>
-        </div>
-      </section>
-      <section className="section practical-home">
-        <p className="eyebrow">03 — LE RENDEZ-VOUS</p>
-        <div className="heading-row">
-          <h2>
-            Une date à garder.
-            <br />
-            Un mouvement à partager.
-          </h2>
-          <Link to="/infos" className="text-link">
-            Préparer ma journée <ArrowUpRight size={18} />
-          </Link>
-        </div>
-        <div className="facts">
-          <div>
-            <CalendarDays />
-            <span>LE JOUR</span>
-            <strong>{eventDate(s)}</strong>
-          </div>
-          <div>
-            <Clock />
-            <span>L’ACCUEIL</span>
-            <strong>Dès {s.reception.replace(':', ' h ')}</strong>
-          </div>
-          <div>
-            <MapPin />
-            <span>LE DÉPART</span>
-            <strong>{s.location || 'À confirmer'}</strong>
-          </div>
-        </div>
-      </section>
-      <section className="volunteer-strip">
-        <div>
-          <p className="eyebrow">L’ÉNERGIE DERRIÈRE L’ÉVÉNEMENT</p>
-          <h2>
-            Et si votre défi,
-            <br />
-            c’était de nous aider?
-          </h2>
-        </div>
-        <div>
-          <p>
-            Sur le terrain et en coulisses, chaque geste compte.
-            <br />
-            Faites partie de l’équipe bénévole.
-          </p>
-          <Link to="/benevolat" className="button outline">
-            Je donne un coup de main <ArrowUpRight size={18} />
-          </Link>
-        </div>
-      </section>
-    </>
-  );
-}
-function ActivityRows({ sport = null }: any) {
-  const { data } = useApp();
-  const groups = [
-    {
-      id: 'velo',
-      label: 'Le vélo',
-      distance: '100 km',
-      icon: Bike,
-      description: 'Le plaisir de rouler. La force d’avancer ensemble.',
-      num: '01',
-    },
-    {
-      id: 'course',
-      label: 'La course',
-      distance: '10, 5 ou 2 km',
-      icon: Activity,
-      description: 'Votre distance. Votre rythme. La même solidarité.',
-      num: '02',
-    },
-    {
-      id: 'marche',
-      label: 'La marche',
-      distance: '5 km',
-      icon: Footprints,
-      description: 'Un pas à la fois, pour une cause qui nous rassemble.',
-      num: '03',
-    },
-  ];
-  return (
-    <div className="activity-rows">
-      {groups
-        .filter((g) => !sport || g.id === sport)
-        .map((g) => {
-          const prices = data.activities.filter((a) => a.sport === g.id).map((a) => a.price);
-          return (
-            <Link to={'/' + g.id} className={'activity-row ' + g.id} key={g.id}>
-              <span className="row-number">{g.num}</span>
-              <g.icon size={37} strokeWidth={1.4} />
-              <div className="activity-title">
-                <h3>{g.label}</h3>
-                <p>{g.description}</p>
-              </div>
-              <span className="activity-distance">{g.distance}</span>
-              <span className="activity-price">Dès {money(Math.min(...prices))}</span>
-              <span className="row-arrow">
-                <ArrowUpRight size={25} />
-              </span>
-            </Link>
-          );
-        })}
-    </div>
-  );
-}
-export function Page({ eyebrow, title, intro, children, className = '' }: any) {
-  return (
-    <div className={'page ' + className}>
-      <div className="page-heading">
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        {intro && <p className="page-intro">{intro}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-function Activities({ sport }: any) {
-  const { data } = useApp();
-  const icons: any = { velo: Bike, course: Activity, marche: Footprints };
-  return (
-    <Page
-      eyebrow="LE MOUVEMENT PREND PLUSIEURS FORMES"
-      title={
-        sport
-          ? (
-              {
-                velo: 'Rouler pour eux.',
-                course: 'Courir pour eux.',
-                marche: 'Marcher pour eux.',
-              } as any
-            )[sport]
-          : 'Trouvez votre défi.'
-      }
-      intro={
-        'Le ' +
-        eventDate(data.settings) +
-        ', on avance ensemble. Participation réservée aux 18 ans et plus.'
-      }
-    >
-      <div className="filter-links">
-        {[
-          ['/activites', 'Tout voir'],
-          ['/velo', 'Vélo'],
-          ['/course', 'Course'],
-          ['/marche', 'Marche'],
-        ].map(([url, label]) => (
-          <Link to={url} key={url} className={location.pathname === url ? 'selected' : ''}>
-            {label}
-          </Link>
-        ))}
-      </div>
-      <div className="activity-options">
-        {data.activities
-          .filter((a) => !sport || a.sport === sport)
-          .map((a) => {
-            const Icon = icons[a.sport];
-            return (
-              <article className="activity-option" key={a.id}>
-                <Icon size={38} />
-                <p className="eyebrow">
-                  {a.sport === 'velo' ? 'VÉLO' : a.sport === 'course' ? 'COURSE' : 'MARCHE'}
-                </p>
-                <h2>{a.distance}</h2>
-                <h3>{a.name}</h3>
-                <p>
-                  {a.capacity === null
-                    ? 'Aucune limite de participants'
-                    : `${Math.max(0, a.capacity - a.occupied)} place(s) disponible(s)`}
-                </p>
-                <strong className="price">{money(a.price)}</strong>
-                <Link
-                  className="button"
-                  to={
-                    (a.capacity !== null && a.occupied >= a.capacity
-                      ? '/attente'
-                      : '/inscription') +
-                    '?activite=' +
-                    a.id
-                  }
-                >
-                  {a.capacity !== null && a.occupied >= a.capacity
-                    ? 'Rejoindre la liste d’attente'
-                    : 'Choisir cette activité'}{' '}
-                  <ArrowUpRight size={18} />
-                </Link>
-                <Link to="/parcours" className="text-link">
-                  Informations sur le parcours
-                </Link>
-              </article>
-            );
-          })}
-      </div>
-      <Notice>
-        Les parcours, les départs des activités et les points de ravitaillement seront publiés après
-        confirmation. L’accueil ouvre à {data.settings.reception.replace(':', ' h ')}.
-      </Notice>
-    </Page>
-  );
-}
-function Practical() {
-  const { data } = useApp();
-  const s = data.settings;
-  return (
-    <Page
-      eyebrow="AVANT DE PRENDRE LE DÉPART"
-      title="Votre journée, simplement."
-      intro="Les informations confirmées sont réunies ici. Les autres seront ajoutées dès qu’elles seront disponibles."
-    >
-      <div className="facts">
-        <div>
-          <CalendarDays />
-          <span>DATE</span>
-          <strong>
-            {new Date(s.eventAt).toLocaleDateString('fr-CA', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-              timeZone: 'America/Toronto',
-            })}
-          </strong>
-        </div>
-        <div>
-          <Clock />
-          <span>ACCUEIL</span>
-          <strong>{s.reception.replace(':', ' h ')}</strong>
-        </div>
-        <div>
-          <MapPin />
-          <span>LIEU</span>
-          <strong>{s.location || 'À confirmer'}</strong>
-        </div>
-      </div>
-      <div className="prose">
-        <h2>Les horaires</h2>
-        <p>
-          Ouverture de l’accueil : {s.reception.replace(':', ' h ')}. L’heure de fermeture{' '}
-          {s.closing
-            ? 'est ' + s.closing
-            : 'et les heures de départ des activités restent à confirmer'}
-          .
-        </p>
-        <h2>Les parcours</h2>
-        {data.activities.map((a) => (
-          <article className="route-info" key={a.id}>
-            <h3>
-              {a.name} · {a.distance}
-            </h3>
-            <p>
-              {a.route.description ||
-                'Le parcours est en préparation. Aucun tracé définitif n’est publié pour le moment.'}
-            </p>
-            {a.route.supplies?.length > 0 && <p>Ravitaillement : {a.route.supplies.join(' · ')}</p>}
-            <div className="actions">
-              {a.route.mapUrl && (
-                <a
-                  className="text-link"
-                  href={a.route.mapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Consulter la carte <ExternalLink size={15} />
-                </a>
-              )}
-              {a.route.gpxUrl && (
-                <a
-                  className="text-link"
-                  href={a.route.gpxUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Télécharger le GPX <Download size={15} />
-                </a>
-              )}
-            </div>
-          </article>
-        ))}
-        <h2>Votre billet</h2>
-        <p>
-          Après confirmation du paiement, le billet et son code QR sont disponibles dans l’espace de
-          l’acheteur. Présentez-les à l’accueil. Une connexion Internet est nécessaire à l’équipe
-          pour valider le billet.
-        </p>
-        <h2>À prévoir</h2>
-        <p>
-          Pour le vélo, le port du casque est obligatoire. Les consignes de sécurité, le
-          stationnement et les services sur place seront précisés par l’organisation.
-        </p>
-      </div>
-    </Page>
-  );
-}
-function Team() {
-  const { data } = useApp();
-  return (
-    <Page eyebrow="NOTRE HISTOIRE" title="Une équipe. Un même élan." intro={data.settings.story}>
-      <div className="team-line">
-        {['Thomas', 'François-Xavier', 'Sammy'].map((name, i) => (
-          <div key={name}>
-            <span className="team-initial">{name[0]}</span>
-            <span className="eyebrow">L’ÉQUIPE RIDE FOR BRAINS</span>
-            <h2>{name}</h2>
-            <p>{i === 0 ? 'Contact de l’organisation' : 'Équipe organisatrice'}</p>
-          </div>
-        ))}
-      </div>
-      <Link to="/contact" className="button">
-        Écrivez-nous <ArrowUpRight size={18} />
-      </Link>
-      {data.settings.photos.length > 0 && (
-        <div className="gallery">
-          {data.settings.photos.map((p: any) => (
-            <figure key={p.url}>
-              <img src={p.url} alt={p.alt} loading="lazy" />
-              <figcaption>{p.alt}</figcaption>
-            </figure>
-          ))}
-        </div>
-      )}
-    </Page>
-  );
-}
-function Cause() {
-  const { data } = useApp();
-  return (
-    <Page
-      eyebrow="NOTRE RAISON D’AVANCER"
-      title="Chaque kilomètre nous relie."
-      intro={data.settings.cause}
-    >
-      <div className="cause-identities">
-        <img src="/assets/ride-for-brains.png" alt="Ride For Brains" />
-        <span>+</span>
-        <div>
-          <img src="/assets/brain-canada.png" alt="Fondation Brain Canada Foundation" />
-        </div>
-      </div>
-      <div className="prose">
-        <h2>Deux gestes, une même cause.</h2>
-        <p>
-          Votre inscription vous permet de participer à Ride For Brains. Si vous souhaitez faire un
-          don, vous êtes dirigé vers notre page de collecte sur la plateforme Brain Canada.
-        </p>
-        <p>
-          Les dons sont traités sur cette plateforme. Ils sont distincts des frais d’inscription et
-          des remboursements gérés par Ride For Brains.
-        </p>
-        <a
-          className="button"
-          href={data.settings.donationUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Faire un don sur Brain Canada <ArrowUpRight size={19} />
-        </a>
-      </div>
-    </Page>
-  );
-}
-function FAQ() {
-  const { data } = useApp();
-  return (
-    <Page eyebrow="ON VOUS RÉPOND" title="Quelques questions avant de partir.">
-      <div className="faq">
-        {data.settings.faq.map((f: any, i: number) => (
-          <details key={i}>
-            <summary>
-              {f.q}
-              <Plus size={20} />
-            </summary>
-            <p>{f.a}</p>
-          </details>
-        ))}
-      </div>
-      <Link to="/contact" className="text-link">
-        Une autre question? Écrivez-nous <ArrowRight size={18} />
-      </Link>
-    </Page>
-  );
-}
-
-function Turnstile({ onToken }: any) {
-  const { data } = useApp();
-  const ref = React.useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!data.services.turnstile) return;
-    let widget: any;
-    let disposed = false;
-    const render = () => {
-      if (disposed || !ref.current) return;
-      const t = (window as any).turnstile;
-      if (t)
-        widget = t.render(ref.current, {
-          sitekey: data.services.turnstile,
-          callback: onToken,
-          'expired-callback': () => onToken(''),
-        });
-    };
-    const t = (window as any).turnstile;
-    let script: HTMLScriptElement | undefined;
-    if (t) render();
-    else {
-      script = document.createElement('script');
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      script.async = true;
-      script.onload = render;
-      document.head.appendChild(script);
-    }
-    return () => {
-      disposed = true;
-      if (widget !== undefined) (window as any).turnstile?.remove(widget);
-    };
-  }, [data.services.turnstile]);
-  return <div ref={ref} />;
 }
 function Contact({ kind }: any) {
   const { data } = useApp();
@@ -1000,104 +460,6 @@ function Legal({ page }: any) {
     </Page>
   );
 }
-function Login() {
-  const { data, user } = useApp();
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    [done, setDone] = useState(false),
-    [token, setToken] = useState(''),
-    [challenge, setChallenge] = useState(0);
-  if (user)
-    return (
-      <Page eyebrow="BON RETOUR" title="Votre espace vous attend.">
-        <Link to="/espace" className="button">
-          Mes inscriptions <ArrowRight size={18} />
-        </Link>
-      </Page>
-    );
-  const submit = async (e: any) => {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    const f = new FormData(e.currentTarget);
-    try {
-      await api('/auth/sign-in/magic-link', {
-        email: f.get('email'),
-        name: f.get('name') || 'Participant',
-        callbackURL:
-          new URLSearchParams(location.search).get('retour') === '/inscription'
-            ? '/inscription'
-            : '/espace',
-        turnstileToken: token,
-      });
-      setDone(true);
-    } catch (e) {
-      setError((e as Error).message);
-      setToken('');
-      setChallenge((value) => value + 1);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Page
-      eyebrow="VOTRE ESPACE PARTICIPANT"
-      title="Votre compte Ride For Brains."
-      intro="Première visite ? Votre compte sera créé lorsque vous ouvrirez le lien reçu par courriel. Déjà inscrit ? Utilisez ce même formulaire pour vous connecter. Aucun mot de passe à retenir."
-    >
-      <div className="auth-layout">
-        <form className="form-panel" onSubmit={submit}>
-          {done ? (
-            <>
-              <ShieldCheck size={36} />
-              <h2>Votre demande est enregistrée.</h2>
-              <p>
-                {data.environment === 'development'
-                  ? 'Le lien est disponible dans la boîte de courriels locale. Aucun courriel externe n’est envoyé.'
-                  : 'Consultez votre boîte courriel, y compris les indésirables. Ouvrez le lien reçu pour créer votre compte ou vous connecter. Il est valable 10 minutes.'}
-              </p>
-              {data.environment === 'development' && (
-                <Link to="/courriels-locaux" className="button">
-                  Ouvrir la boîte locale <Mail size={18} />
-                </Link>
-              )}
-            </>
-          ) : (
-            <>
-              <Field label="Votre prénom et nom">
-                <input name="name" autoComplete="name" maxLength={150} />
-              </Field>
-              <Field label="Votre adresse courriel">
-                <input name="email" type="email" required autoComplete="email" maxLength={200} />
-              </Field>
-              <Turnstile key={challenge} onToken={setToken} />
-              {error && <Notice error>{error}</Notice>}
-              <Button busy={busy}>
-                Recevoir mon lien de connexion <ArrowUpRight size={18} />
-              </Button>
-              <p className="small">
-                Nous utilisons votre courriel pour sécuriser l’accès à vos inscriptions.
-              </p>
-            </>
-          )}
-        </form>
-        <div className="auth-aside">
-          <Ticket size={35} />
-          <h2>
-            Tout votre événement,
-            <br />
-            au même endroit.
-          </h2>
-          <p>
-            Vos inscriptions, votre statut de paiement, vos billets et les messages de
-            l’organisation.
-          </p>
-        </div>
-      </div>
-    </Page>
-  );
-}
-
 function Waitlist() {
   const { user, data } = useApp();
   const activity = data.activities.find(
@@ -1119,7 +481,7 @@ function Waitlist() {
           <p>
             Connectez-vous pour rejoindre la liste d’attente. Revenez ensuite sur cette activité.
           </p>
-          <Link className="button" to="/connexion">
+          <Link className="button" to={accountUrl(location.pathname + location.search)}>
             Me connecter
           </Link>
         </Notice>
@@ -1194,6 +556,7 @@ function emptyParticipant(activity: any) {
 function Registration() {
   const { data, user } = useApp();
   const pre = new URLSearchParams(location.search).get('activite');
+  useEffect(() => track('registration_start', pre || undefined), [pre]);
   const initial = data.activities.find((a) => a.id === pre) || data.activities[0];
   const [people, setPeople] = useState<any[]>([emptyParticipant(initial)]),
     [step, setStep] = useState(1),
@@ -1207,10 +570,13 @@ function Registration() {
     setKey(crypto.randomUUID());
   }, [people, promo]);
   useEffect(() => {
-    if (user && !pre)
+    if (user)
       api('/draft')
         .then((d) => {
-          if (d?.participants?.length) {
+          if (
+            d?.participants?.length &&
+            (!pre || d.participants.some((p: any) => p.activityId === pre))
+          ) {
             const restored = d.participants
               .map((p: any) => {
                 const a = data.activities.find((a) => a.id === p.activityId);
@@ -1235,9 +601,15 @@ function Registration() {
   }, [user?.id]);
   const saveDraft = async () => {
     try {
-      await api('/draft', { participants: people, promo }, 'PUT');
+      await api(
+        user ? '/draft' : '/draft/guest',
+        { participants: people, promo },
+        user ? 'PUT' : 'POST',
+      );
       setDraftMessage(
-        'Votre brouillon est enregistré dans votre compte. Aucune place n’est réservée et aucun paiement n’a été effectué.',
+        user
+          ? 'Votre brouillon est enregistré dans votre compte. Aucune place n’est réservée.'
+          : 'Votre brouillon est conservé de façon sécurisée pendant deux heures sur ce navigateur. Aucune place n’est réservée.',
       );
     } catch (e) {
       setError((e as Error).message);
@@ -1254,9 +626,15 @@ function Registration() {
       if (step === 2) {
         setBusy(true);
         try {
+          if (!user) {
+            await api('/draft/guest', { participants: people, promo });
+            go(accountUrl(location.pathname + location.search));
+            return;
+          }
           const q = await api('/quote', { participants: people.map((p) => p.activityId), promo });
           setQuote(q);
           setStep(3);
+          track('form_complete', people[0]?.activityId);
         } catch (e) {
           setError((e as Error).message);
         } finally {
@@ -1281,6 +659,7 @@ function Registration() {
         return;
       }
       const result = await api('/orders/' + order.id + '/checkout', {});
+      track('checkout_start', people[0]?.activityId);
       location.assign(result.url);
     } catch (e) {
       setError((e as Error).message);
@@ -1306,13 +685,6 @@ function Registration() {
             Explorer les activités <ArrowRight size={18} />
           </Link>
         </div>
-      ) : !user ? (
-        <Notice>
-          <p>Connectez-vous d’abord pour garder vos inscriptions et vos billets au même endroit.</p>
-          <Link to="/connexion?retour=/inscription" className="button">
-            Me connecter pour m’inscrire <ArrowRight size={18} />
-          </Link>
-        </Notice>
       ) : (
         <>
           {draftMessage && <Notice>{draftMessage}</Notice>}
@@ -1575,6 +947,7 @@ function Registration() {
                         : 'Le paiement s’effectue sur la page sécurisée Stripe, puis vous revenez ici. La confirmation dépend de la vérification du paiement par le serveur.'}
                     </p>
                   </Notice>
+                  <p className="fee-disclosure">{donationNotice}</p>
                 </>
               )}
               {error && <Notice error>{error}</Notice>}
@@ -1594,7 +967,8 @@ function Registration() {
                 )}
                 {step < 3 ? (
                   <Button type="submit" busy={busy}>
-                    Continuer <ArrowRight size={18} />
+                    {step === 2 && !user ? 'Créer un compte ou me connecter' : 'Continuer'}{' '}
+                    <ArrowRight size={18} />
                   </Button>
                 ) : (
                   <Button type="button" busy={busy} onClick={pay}>
@@ -1666,51 +1040,6 @@ function Registration() {
     </Page>
   );
 }
-export function DynamicFields({ fields, answers, onChange }: any) {
-  return (
-    <div className="dynamic-fields">
-      {fields
-        .filter((f: any) => !f.showWhen || answers[f.showWhen.field] === f.showWhen.equals)
-        .map((f: any) =>
-          f.type === 'checkbox' ? (
-            <label className="checkbox" key={f.id}>
-              <input
-                type="checkbox"
-                required={f.required}
-                checked={!!answers[f.id]}
-                onChange={(e) => onChange({ ...answers, [f.id]: e.target.checked })}
-              />
-              {f.label}
-              {f.required ? ' *' : ''}
-            </label>
-          ) : (
-            <Field key={f.id} label={f.label + (f.required ? ' *' : '')}>
-              {f.type === 'select' ? (
-                <select
-                  required={f.required}
-                  value={answers[f.id] || ''}
-                  onChange={(e) => onChange({ ...answers, [f.id]: e.target.value })}
-                >
-                  <option value="">Choisir une réponse</option>
-                  {f.options?.map((o: string) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  required={f.required}
-                  maxLength={1000}
-                  value={answers[f.id] || ''}
-                  onChange={(e) => onChange({ ...answers, [f.id]: e.target.value })}
-                />
-              )}
-            </Field>
-          ),
-        )}
-    </div>
-  );
-}
-
 function Participant() {
   const { user, refresh, data } = useApp();
   const [state, setState] = useState<any>(null),
@@ -1718,6 +1047,11 @@ function Participant() {
     [ticket, setTicket] = useState<any>(null),
     [busy, setBusy] = useState(''),
     [message, setMessage] = useState('');
+  const ticketTrigger = useRef<HTMLElement | null>(null);
+  const closeTicket = () => {
+    setTicket(null);
+    ticketTrigger.current?.focus({ preventScroll: true });
+  };
   const load = () =>
     api('/registrations')
       .then(setState)
@@ -1734,6 +1068,7 @@ function Participant() {
       </Page>
     );
   const showTicket = async (id: string) => {
+    ticketTrigger.current = document.activeElement as HTMLElement;
     setError('');
     try {
       const t = await api('/registrations/' + id + '/ticket');
@@ -1744,17 +1079,24 @@ function Participant() {
       setError((e as Error).message);
     }
   };
-  const cancel = async (orderId: string) => {
+  const cancel = async (orderId: string, registrationId?: string) => {
     if (
       !confirm(
-        'Annuler toutes les participations de ce dossier? Le remboursement sera calculé selon la politique affichée.',
+        registrationId
+          ? 'Annuler uniquement cette participation? Les autres participations restent valides. Le remboursement dépend du délai de 15 jours.'
+          : 'Annuler toutes les participations de ce dossier? Le remboursement sera calculé selon la politique affichée.',
       )
     )
       return;
     setBusy(orderId);
     setError('');
     try {
-      const r = await api('/orders/' + orderId + '/cancel', { confirm: true });
+      const r = await api(
+        registrationId
+          ? '/registrations/' + registrationId + '/cancel'
+          : '/orders/' + orderId + '/cancel',
+        { confirm: true },
+      );
       setMessage(
         r.refundRequested
           ? 'Demande enregistrée. Remboursement en traitement : ' + money(r.refundRequested)
@@ -1810,8 +1152,8 @@ function Participant() {
       </div>
       {new URLSearchParams(location.search).has('commande') && (
         <Notice>
-          Vous êtes de retour du paiement. Le statut ci-dessous change seulement après vérification
-          de Stripe.{' '}
+          Nous vérifions votre paiement. Le statut ci-dessous change seulement après confirmation
+          par Stripe.{' '}
           <button className="text-link" onClick={load}>
             Actualiser
           </button>
@@ -1907,14 +1249,24 @@ function Participant() {
                 {['confirmed', 'partially_refunded'].includes(r.status) && (
                   <>
                     <button className="button" onClick={() => showTicket(r.id)}>
-                      Mon billet <Ticket size={17} />
+                      Aperçu du QR <Ticket size={17} />
+                    </button>
+                    <Link className="button light" to={'/billet/' + r.id}>
+                      Ouvrir mon billet
+                    </Link>
+                    <button
+                      className="text-link"
+                      disabled={busy === r.order_id}
+                      onClick={() => cancel(r.order_id, r.id)}
+                    >
+                      Annuler cette participation
                     </button>
                     <button
                       className="text-link"
                       disabled={busy === r.order_id}
                       onClick={() => cancel(r.order_id)}
                     >
-                      Annuler le dossier
+                      Annuler tout le dossier
                     </button>
                   </>
                 )}
@@ -1974,14 +1326,14 @@ function Participant() {
         </button>
       </details>
       {ticket && (
-        <div className="modal-backdrop" onClick={() => setTicket(null)}>
+        <div className="modal-backdrop" onClick={() => closeTicket()}>
           <section
             className="ticket-modal"
             role="dialog"
             aria-modal="true"
             aria-label="Votre billet"
             onKeyDown={(e) => {
-              if (e.key === 'Escape') setTicket(null);
+              if (e.key === 'Escape') closeTicket();
               if (e.key === 'Tab') {
                 const nodes = e.currentTarget.querySelectorAll<HTMLElement>('button,a[href]');
                 const first = nodes[0],
@@ -2000,7 +1352,7 @@ function Participant() {
             <button
               className="modal-close icon-button"
               autoFocus
-              onClick={() => setTicket(null)}
+              onClick={() => closeTicket()}
               aria-label="Fermer"
             >
               <X />

@@ -1,3 +1,9 @@
+# Vérifications de la refonte 2027
+
+La campagne actuelle et ses mesures sont décrites dans [AUDIT-2027.md](AUDIT-2027.md). Les résultats synthétiques sont dans [TEST-RESULTS.txt](TEST-RESULTS.txt). Les prestataires sont simulés; les tests ne prouvent pas une transaction réelle, une livraison à Hotmail ou une lecture caméra sur téléphone physique.
+
+## Référence historique avant la refonte
+
 # Vérifications
 
 ## Tests automatisés

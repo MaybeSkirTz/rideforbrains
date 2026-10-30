@@ -1,3 +1,4 @@
+import { countEvent } from './analytics';
 import Stripe from 'stripe';
 import type { Env } from './types';
 import { now, uuid, isLocal } from './types';
@@ -164,6 +165,7 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
       ];
       try {
         await env.DB.batch(statements);
+        await countEvent(env, 'payment_confirmed');
       } catch (e) {
         if (!/CAPACITY_EXCEEDED|PROMO_UNAVAILABLE/.test(String(e))) throw e;
         await env.DB.batch([
@@ -248,6 +250,18 @@ export async function applyRefund(env: Env, refund: Stripe.Refund) {
         ? 'failed'
         : 'pending';
   const id = refund.metadata?.job_id || 'external:' + refund.id;
+  const existing = await env.DB.prepare(
+    'SELECT order_id,amount,provider_id FROM refund_jobs WHERE id=?',
+  )
+    .bind(id)
+    .first<any>();
+  if (
+    existing &&
+    (existing.order_id !== order.id ||
+      existing.amount !== refund.amount ||
+      (existing.provider_id && existing.provider_id !== refund.id))
+  )
+    throw Error('Refund reconciliation mismatch');
   // Keep successful refunds monotonic if an older webhook is received later.
   await env.DB.prepare(
     "INSERT INTO refund_jobs(id,order_id,amount,reason,status,provider_id) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN refund_jobs.status='succeeded' THEN 'succeeded' ELSE excluded.status END,provider_id=excluded.provider_id",
@@ -270,10 +284,45 @@ export async function applyRefund(env: Env, refund: Stripe.Refund) {
           : order.status === 'refunding'
             ? 'confirmed'
             : order.status;
-  await env.DB.batch([
+  const job = await env.DB.prepare('SELECT registration_id FROM refund_jobs WHERE id=?')
+    .bind(id)
+    .first<any>();
+  const statements = [
     env.DB.prepare('UPDATE orders SET refunded=?,status=? WHERE id=?').bind(total, next, order.id),
-    env.DB.prepare('UPDATE registrations SET status=? WHERE order_id=?').bind(next, order.id),
-  ]);
+  ];
+  if (job?.registration_id) {
+    const part = await env.DB.prepare(
+      "SELECT COALESCE(SUM(CASE WHEN status='succeeded' THEN amount ELSE 0 END),0) AS total,SUM(CASE WHEN status IN ('queued','processing','pending') THEN 1 ELSE 0 END) AS pending FROM refund_jobs WHERE registration_id=?",
+    )
+      .bind(job.registration_id)
+      .first<any>();
+    const r = await env.DB.prepare('SELECT price,status FROM registrations WHERE id=?')
+      .bind(job.registration_id)
+      .first<any>();
+    const rs =
+      part.total >= r.price
+        ? 'refunded'
+        : part.pending > 0
+          ? 'refunding'
+          : part.total > 0
+            ? 'partially_refunded'
+            : 'confirmed';
+    statements.push(
+      env.DB.prepare('UPDATE registrations SET refunded_amount=?,status=? WHERE id=?').bind(
+        part.total,
+        rs,
+        job.registration_id,
+      ),
+    );
+  } else {
+    // External/whole-order refunds retain legacy allocation. Never reactivate cancelled tickets.
+    statements.push(
+      env.DB.prepare(
+        "UPDATE registrations SET status=? WHERE order_id=? AND status NOT IN ('cancelled','refunded')",
+      ).bind(next, order.id),
+    );
+  }
+  await env.DB.batch(statements);
 }
 export async function processRefunds(env: Env) {
   if (!env.STRIPE_SECRET_KEY) return;
@@ -305,6 +354,7 @@ export async function processRefunds(env: Env) {
       );
       await applyRefund(env, r);
     } catch (e) {
+      console.error(JSON.stringify({ event: 'refund_retry', code: 'PROVIDER_UNAVAILABLE' }));
       await env.DB.prepare('UPDATE refund_jobs SET error=? WHERE id=?')
         .bind('Prestataire indisponible; reprise avec clé idempotente', job.id)
         .run();

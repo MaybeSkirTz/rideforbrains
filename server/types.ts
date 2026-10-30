@@ -1,6 +1,7 @@
 export type Env = {
   DB: D1Database;
   ASSETS: Fetcher;
+  MEDIA?: R2Bucket;
   APP_ENV: string;
   APP_URL: string;
   BETTER_AUTH_SECRET: string;

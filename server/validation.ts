@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { editorialSchema, publicURL, visibleFields } from './editorial';
 const line = z
   .string()
   .trim()
@@ -94,9 +95,47 @@ export const settingsSchema = z
     privacy: z.string().min(10).max(16000),
     cause: z.string().max(5000),
     story: z.string().max(6000),
-    faq: z.array(z.object({ q: line, a: z.string().max(3000) })).max(50),
-    partners: z.array(z.object({ name: line, url: z.url(), logo: z.url() })).max(30),
-    photos: z.array(z.object({ url: z.url(), alt: line })).max(30),
+    faq: z.array(z.object({ q: line, a: z.string().max(3000), ...visibleFields }).strict()).max(50),
+    partners: z
+      .array(
+        z
+          .object({
+            name: line,
+            url: publicURL,
+            logo: z.union([publicURL, z.literal('')]),
+            category: z.string().max(100).optional(),
+            level: z.string().max(100).optional(),
+            ...visibleFields,
+          })
+          .strict(),
+      )
+      .max(50),
+    photos: z
+      .array(
+        z
+          .object({
+            url: publicURL,
+            alt: line,
+            caption: z.string().max(500).optional(),
+            section: z
+              .enum([
+                'edition',
+                'velo',
+                'course',
+                'marche',
+                'benevoles',
+                'equipe',
+                'depart',
+                'arrivee',
+                'moments',
+              ])
+              .optional(),
+            ...visibleFields,
+          })
+          .strict(),
+      )
+      .max(80),
+    editorial: editorialSchema,
   })
   .strict();
 export const activitySchema = z
@@ -121,6 +160,23 @@ export const activitySchema = z
         .refine((v) => v.startsWith('https://'))
         .optional(),
       supplies: z.array(z.string().max(200)).max(30).optional(),
+      coordinates: z
+        .array(z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]))
+        .max(5000)
+        .optional(),
+      points: z
+        .array(
+          z
+            .object({
+              label: line,
+              kind: z.enum(['start', 'finish', 'water', 'point']),
+              lng: z.number().min(-180).max(180),
+              lat: z.number().min(-90).max(90),
+            })
+            .strict(),
+        )
+        .max(100)
+        .optional(),
     }),
   })
   .strict();

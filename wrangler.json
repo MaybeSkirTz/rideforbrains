@@ -3,15 +3,46 @@
   "name": "ride-for-brains",
   "main": "server/index.ts",
   "compatibility_date": "2026-07-30",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
-      "/api/*"
+      "/api/*",
+      "/media/*",
+      "/",
+      "/activites",
+      "/activites/*",
+      "/cause",
+      "/equipe",
+      "/infos",
+      "/faq",
+      "/benevoles",
+      "/partenaires",
+      "/conditions",
+      "/confidentialite",
+      "/connexion",
+      "/compte",
+      "/espace",
+      "/inscription",
+      "/attente",
+      "/billet/*",
+      "/transfert",
+      "/admin",
+      "/admin/*",
+      "/sitemap.xml",
+      "/robots.txt",
+      "/calendrier.ics",
+      "/velo",
+      "/course",
+      "/marche",
+      "/contact",
+      "/benevolat",
+      "/parcours",
+      "/annulation",
+      "/desabonnement",
+      "/courriels-locaux"
     ]
   },
   "d1_databases": [
@@ -28,11 +59,14 @@
     "PAYMENTS_MODE": "live"
   },
   "triggers": {
-    "crons": [
-      "*/5 * * * *"
-    ]
+    "crons": ["*/5 * * * *"]
   },
   "observability": {
-    "enabled": false
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    }
   }
 }
