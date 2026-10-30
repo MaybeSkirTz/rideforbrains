@@ -2,13 +2,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { publish, workerUrl } from '../scripts/publish.mjs';
 
 function fixture(config) {
   const cwd = mkdtempSync(join(tmpdir(), 'rfb-publish-test-'));
   writeFileSync(join(cwd, 'wrangler.json'), JSON.stringify(config));
-  return { cwd, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
+  return {
+    cwd,
+    cleanup: () => {
+      assert.equal(dirname(resolve(cwd)), resolve(tmpdir()));
+      assert.ok(basename(cwd).startsWith('rfb-publish-test-'));
+      rmSync(cwd, { recursive: true, force: true });
+    },
+  };
 }
 const config = (url = 'https://replace-before-deploy.example') => ({
   name: 'ride-for-brains',
