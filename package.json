@@ -12,7 +12,7 @@
     "check": "tsc --noEmit",
     "build:worker": "vite build --config vite.worker.config.ts --configLoader runner",
     "test": "npm run build:worker && vite build --config vite.tasks.config.ts --configLoader runner && node --test --test-concurrency=1 tests/app.test.mjs",
-    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:local": "node scripts/db-local.mjs",
     "db:remote": "wrangler d1 migrations apply DB --remote",
     "deploy": "npm run check && npm run build && wrangler deploy",
     "admin": "node scripts/admin.mjs",

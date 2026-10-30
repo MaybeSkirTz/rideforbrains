@@ -33,7 +33,9 @@ Le résultat de la dernière exécution et les éventuels scénarios ajoutés so
 
 ## Navigateur
 
-L’interface a été réellement ouverte dans le navigateur intégré. Vérifications effectuées : accueil et scène 3D, navigation publique, connexion locale par courriel, accès à l’administration et aperçu du constructeur de formulaires. Le format téléphone a été examiné à une largeur d’environ 390 px : typographie, menu repliable, CTA et disposition verticale. Le débordement horizontal repéré sur l’accueil a été corrigé.
+L’interface a été réellement ouverte dans le navigateur intégré. Vérifications effectuées : accueil et scène 3D, navigation publique, connexion locale par courriel, accès à l’administration et aperçu du constructeur de formulaires. Le formulaire a été rempli avec des données fictives jusqu’au récapitulatif de 15 $; l’action de paiement a correctement affiché le refus explicite lié à l’absence de configuration Stripe, sans inscription confirmée ni prélèvement. Le format téléphone a été examiné à une largeur d’environ 390 px : typographie, menu repliable, CTA et disposition verticale. Le menu a été activé au clavier. Le débordement horizontal repéré sur l’accueil a été corrigé et les largeurs de contenu et de viewport sont identiques sur ordinateur et téléphone.
+
+Les commandes locales d’administration et de migration ont aussi été exécutées : elles refusent de rouvrir la base pendant le fonctionnement du serveur et s’exécutent après son arrêt, afin de respecter le verrou SQLite de Workerd.
 
 Les formulaires et les boutons disposent de labels, les erreurs sont annoncées via des régions d’alerte, le contenu principal reçoit le focus à la navigation, et un lien d’évitement est fourni. La 3D est désactivée pour `prefers-reduced-motion`, sans WebGL ou en cas d’échec d’initialisation; elle suspend le rendu hors écran. Cela ne remplace pas un audit d’accessibilité ou une vérification par lecteur d’écran.
 

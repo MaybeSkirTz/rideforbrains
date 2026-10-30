@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { Miniflare } from 'miniflare';
-import { migrate } from './migrate.mjs';
+import { withLocalDatabase } from './local-db.mjs';
 const args = process.argv.slice(2),
   email = args[args.indexOf('--email') + 1],
   remote = args.includes('--remote');
@@ -25,15 +24,7 @@ if (remote) {
   );
   if (result.status) process.exit(result.status);
 } else {
-  const mf = new Miniflare({
-    modules: true,
-    script: 'export default {fetch(){return new Response("local admin CLI")}}',
-    d1Databases: { DB: 'local-ride-for-brains' },
-    d1Persist: 'work/runtime/d1',
-  });
-  try {
-    const db = await mf.getD1Database('DB');
-    await migrate(db);
+  await withLocalDatabase(async (db) => {
     await db
       .prepare(
         `INSERT INTO staff(user_id,role,permissions) SELECT id,'admin','[]' FROM user WHERE lower(email)=? AND emailVerified=1 ON CONFLICT(user_id) DO UPDATE SET role='admin'`,
@@ -50,9 +41,7 @@ if (remote) {
           .all()
       ).results,
     );
-  } finally {
-    await mf.dispose();
-  }
+  });
 }
 console.log(
   'Vérifiez qu’une ligne confirme le rôle admin. Une table vide signifie que la personne doit d’abord se connecter et vérifier son courriel.',

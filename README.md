@@ -26,13 +26,13 @@ Si l’antivirus intercepte TLS, configurer son certificat de confiance avec `NO
 ## Premier administrateur
 
 1. Se connecter une première fois avec son courriel via `/connexion`, puis utiliser son lien personnel.
-2. Exécuter **depuis le terminal ayant accès à la base locale** :
+2. Arrêter le serveur de développement avec `Ctrl+C`, puis exécuter **depuis le dossier du projet** :
 
 ```powershell
 npm run admin -- --email thomasberu0104@hotmail.com --local
 ```
 
-3. Vérifier la ligne affichée qui confirme `admin`, recharger le site, ouvrir `/admin`.
+3. Vérifier la ligne affichée qui confirme `admin`, relancer `npm run dev`, recharger le site et ouvrir `/admin`.
 
 La commande n’élève qu’un compte **déjà vérifié**. Aucun mot de passe par défaut, aucune élévation par simple adresse de courriel et aucune route HTTP d’installation. En production, la procédure diffère : [déploiement et accès renforcé](docs/DEPLOIEMENT.md).
 
