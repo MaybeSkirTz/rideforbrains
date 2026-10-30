@@ -170,6 +170,8 @@ app.get('/api/public', async (c) => {
 });
 app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
   if (c.req.path.endsWith('/sign-in/magic-link') && c.req.method === 'POST') {
+    if (!isLocal(c.env) && (!c.env.RESEND_API_KEY || !c.env.MAIL_FROM))
+      fail(503, 'La connexion par courriel n’est pas encore activée. Contactez l’organisation.');
     await limited(c.env, 'login:' + (c.req.header('cf-connecting-ip') || 'local'), 5, 600);
     const input = (await c.req.raw.clone().json()) as any;
     await botCheck(c, input.turnstileToken);

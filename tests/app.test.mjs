@@ -240,6 +240,108 @@ test('Magic link authentication creates a verified account and cannot be reused'
   assert.equal(replay.status, 302);
   assert.match(replay.headers.get('location'), /error=/);
 });
+
+test('Production sign-in returns a clear JSON error until both mail settings are present', async () => {
+  for (const mailBindings of [
+    {},
+    { RESEND_API_KEY: 're_fixture_only' },
+    { MAIL_FROM: 'Ride For Brains <inscriptions@example.test>' },
+  ]) {
+    const visitor = new Miniflare({
+      modules: [{ type: 'ESModule', path: resolve('work/server/index.js') }],
+      compatibilityDate: '2026-07-30',
+      compatibilityFlags: ['nodejs_compat'],
+      bindings: { APP_ENV: 'production', APP_URL: 'https://example.test', ...mailBindings },
+      serviceBindings: { ASSETS: () => new Response('test assets') },
+    });
+    try {
+      const r = await visitor.dispatchFetch('https://example.test/api/auth/sign-in/magic-link', {
+        method: 'POST',
+        headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'test@example.test' }),
+      });
+      assert.equal(r.status, 503);
+      assert.match(r.headers.get('content-type'), /application\/json/);
+      assert.match((await r.json()).error, /connexion par courriel n’est pas encore activée/);
+    } finally {
+      await visitor.dispose();
+    }
+  }
+});
+
+test('Production sign-in validates Turnstile, sends through Resend, and verifies a new account', async () => {
+  const external = createFetchMock();
+  external.disableNetConnect();
+  const site = 'https://example.test';
+  external
+    .get('https://challenges.cloudflare.com')
+    .intercept({
+      path: '/turnstile/v0/siteverify',
+      method: 'POST',
+    })
+    .reply(200, { success: true, hostname: 'example.test' });
+  external
+    .get('https://api.resend.com')
+    .intercept({
+      path: '/emails',
+      method: 'POST',
+      headers: { authorization: 'Bearer re_login_fixture' },
+    })
+    .reply(200, { id: 'email_login_fixture' });
+  const visitor = new Miniflare({
+    modules: [{ type: 'ESModule', path: resolve('work/server/index.js') }],
+    compatibilityDate: '2026-07-30',
+    compatibilityFlags: ['nodejs_compat'],
+    d1Databases: ['DB'],
+    bindings: {
+      APP_ENV: 'production',
+      APP_URL: site,
+      BETTER_AUTH_SECRET: 'production-fixture-with-more-than-32-bytes',
+      RESEND_API_KEY: 're_login_fixture',
+      MAIL_FROM: 'Ride For Brains <inscriptions@example.test>',
+      TURNSTILE_SECRET_KEY: 'turnstile_login_fixture',
+    },
+    fetchMock: external,
+    serviceBindings: { ASSETS: () => new Response('test assets') },
+  });
+  try {
+    const productionDb = await visitor.getD1Database('DB');
+    await migrate(productionDb);
+    const started = await visitor.dispatchFetch(site + '/api/auth/sign-in/magic-link', {
+      method: 'POST',
+      headers: { Origin: site, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'new-account@example.test',
+        name: 'Camille Test',
+        callbackURL: '/espace',
+        turnstileToken: 'single-use-fixture',
+      }),
+    });
+    assert.equal(started.status, 200, await started.clone().text());
+    const mail = await productionDb.prepare('SELECT body,status FROM outbox').first();
+    assert.equal(mail.status, 'accepted');
+    const link = mail.body.match(/https:\/\/[^\s]+/)[0];
+    const verified = await visitor.dispatchFetch(link, { redirect: 'manual' });
+    assert.equal(verified.status, 302);
+    assert.equal(verified.headers.get('location'), site + '/espace');
+    const cookie = verified.headers
+      .getSetCookie()
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const session = await visitor.dispatchFetch(site + '/api/me', { headers: { Cookie: cookie } });
+    const account = (await session.json()).user;
+    assert.equal(account.email, 'new-account@example.test');
+    const row = await productionDb
+      .prepare('SELECT emailVerified FROM user WHERE id=?')
+      .bind(account.id)
+      .first();
+    assert.equal(row.emailVerified, 1);
+    external.assertNoPendingInterceptors();
+  } finally {
+    await visitor.dispose();
+    await external.close();
+  }
+});
 test('Unauthenticated and foreign-origin mutations are rejected', async () => {
   assert.equal((await request('/orders', order())).status, 401);
   const res = await mf.dispatchFetch(origin + '/api/orders', {

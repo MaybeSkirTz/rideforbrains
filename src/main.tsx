@@ -1005,7 +1005,8 @@ function Login() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [done, setDone] = useState(false),
-    [token, setToken] = useState('');
+    [token, setToken] = useState(''),
+    [challenge, setChallenge] = useState(0);
   if (user)
     return (
       <Page eyebrow="BON RETOUR" title="Votre espace vous attend.">
@@ -1032,6 +1033,8 @@ function Login() {
       setDone(true);
     } catch (e) {
       setError((e as Error).message);
+      setToken('');
+      setChallenge((value) => value + 1);
     } finally {
       setBusy(false);
     }
@@ -1039,8 +1042,8 @@ function Login() {
   return (
     <Page
       eyebrow="VOTRE ESPACE PARTICIPANT"
-      title="Le lien qui vous rassemble."
-      intro="Connectez-vous avec un lien personnel reçu par courriel. Aucun mot de passe à retenir."
+      title="Votre compte Ride For Brains."
+      intro="Première visite ? Votre compte sera créé lorsque vous ouvrirez le lien reçu par courriel. Déjà inscrit ? Utilisez ce même formulaire pour vous connecter. Aucun mot de passe à retenir."
     >
       <div className="auth-layout">
         <form className="form-panel" onSubmit={submit}>
@@ -1051,7 +1054,7 @@ function Login() {
               <p>
                 {data.environment === 'development'
                   ? 'Le lien est disponible dans la boîte de courriels locale. Aucun courriel externe n’est envoyé.'
-                  : 'Consultez votre boîte courriel dans quelques minutes. Le lien est valable 10 minutes.'}
+                  : 'Consultez votre boîte courriel, y compris les indésirables. Ouvrez le lien reçu pour créer votre compte ou vous connecter. Il est valable 10 minutes.'}
               </p>
               {data.environment === 'development' && (
                 <Link to="/courriels-locaux" className="button">
@@ -1067,7 +1070,7 @@ function Login() {
               <Field label="Votre adresse courriel">
                 <input name="email" type="email" required autoComplete="email" maxLength={200} />
               </Field>
-              <Turnstile onToken={setToken} />
+              <Turnstile key={challenge} onToken={setToken} />
               {error && <Notice error>{error}</Notice>}
               <Button busy={busy}>
                 Recevoir mon lien de connexion <ArrowUpRight size={18} />

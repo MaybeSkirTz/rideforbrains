@@ -9,9 +9,27 @@ export async function api<T = any>(
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
-  const data: any = await res.json();
-  if (!res.ok)
-    throw new Error(data.error?.message || data.error || data.message || 'La demande a échoué.');
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // A server or proxy can return an empty body or HTML, including on errors.
+  }
+  if (!res.ok) {
+    const message = data?.error?.message || data?.error || data?.message;
+    throw new Error(
+      typeof message === 'string'
+        ? message
+        : res.status === 429
+          ? 'Trop de demandes. Réessayez dans quelques minutes.'
+          : 'Le service est temporairement indisponible. Réessayez dans quelques minutes.',
+    );
+  }
+  if (data === undefined)
+    throw new Error(
+      'Le serveur a renvoyé une réponse inattendue. Réessayez dans quelques minutes.',
+    );
   return data as T;
 }
 export const money = (cents: number) =>

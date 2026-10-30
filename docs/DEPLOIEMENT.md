@@ -39,7 +39,7 @@ Créer et vérifier le compte Stripe de l’organisation; renseigner son bénéf
 1. Dans l’environnement **test** de Stripe, créer une clé secrète `sk_test_…`.
 2. Définir cette clé dans `.dev.vars` localement ou dans Workers. Le serveur local interdit explicitement les clés `sk_live_…`.
 3. Ajouter le webhook `/api/webhooks/stripe` avec les événements : `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `refund.created`, `refund.updated`, `refund.failed`, `charge.refunded`.
-4. Installer le secret de signature `whsec_…`. Localement, utiliser le Stripe CLI : `stripe listen --forward-to localhost:8787/api/webhooks/stripe`, puis installer **son** secret de signature local.
+4. Installer le secret de signature `whsec_…`. Localement, utiliser le Stripe CLI : `stripe listen --all-snapshot --forward-to http://localhost:8787/api/webhooks/stripe`, puis installer **son** secret de signature local.
 5. Tester une inscription complète sur Checkout avec les cartes test de Stripe : paiement réussi, carte refusée, authentification bancaire, abandon et remboursement. Ne jamais utiliser une vraie carte pendant ces essais.
 6. Vérifier le dossier et l’événement dans Stripe, puis dans `/admin`. Un retour à `/espace?commande=…` n’est pas une preuve de paiement.
 

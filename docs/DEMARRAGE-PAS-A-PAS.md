@@ -148,7 +148,7 @@ Coller la clé lorsque la commande la demande, puis Entrée.
 npx wrangler secret put MAIL_FROM
 ```
 
-Saisir une adresse appartenant au domaine vérifié, sous la forme `Ride For Brains <inscriptions@TON-DOMAINE>`, en remplaçant réellement le domaine. Ne pas utiliser l’adresse Hotmail comme expéditeur Resend. Hotmail peut rester le contact de l’organisation.
+Saisir exactement `Ride For Brains <inscriptions@rideforbrains.ca>` une fois `rideforbrains.ca` vérifié dans Resend. Ne pas utiliser l’adresse Hotmail comme expéditeur Resend. Hotmail peut rester le contact de l’organisation.
 
 8. Dans les webhooks Resend, ajouter l’adresse du vrai site suivie de `/api/webhooks/resend`. Sélectionner les événements de livraison, rejet et plainte disponibles. Copier son secret de signature, puis le fournir à :
 
@@ -157,6 +157,10 @@ npx wrangler secret put RESEND_WEBHOOK_SECRET
 ```
 
 **Résultat attendu : le service possède un domaine vérifié, un expéditeur et un webhook.** Un message accepté n’est pas une preuve de livraison : vérifier les états du prestataire. Choisir une offre adaptée au nombre de connexions et de confirmations; le plafond gratuit quotidien peut être insuffisant lors d’une pointe. Aucun abonnement n’est activé automatiquement.
+
+Le domaine vérifié et le webhook ne suffisent pas à envoyer les liens de connexion. Les deux réglages `RESEND_API_KEY` et `MAIL_FROM` doivent aussi être présents dans **Cloudflare → Workers & Pages → ride-for-brains → Settings → Variables and Secrets**, dans l’environnement de production. La clé d’envoi Resend commence par `re_`; le secret de webhook `whsec_` est différent et ne la remplace pas. Ne pas coller ces clés dans le chat ou dans GitHub.
+
+Si la page de connexion affiche une erreur JSON ou indique que la connexion par courriel n’est pas activée, vérifier ces deux réglages. Après les avoir renseignés avec les commandes ci-dessus, recharger la page de connexion et demander un nouveau lien.
 
 ## I. Configurer Turnstile, la protection des formulaires
 
@@ -180,9 +184,9 @@ npx wrangler secret put TURNSTILE_SECRET_KEY
 
 ## J. Créer le compte de Thomas et protéger l’administration
 
-1. Ouvrir le site public, puis **Mon espace**.
-2. Demander un lien pour `thomasberu0104@hotmail.com`.
-3. Ouvrir le courriel reçu et cliquer sur le lien personnel. Si aucun message n’arrive, vérifier Resend avant de poursuivre.
+1. Ouvrir https://rideforbrains.ca/connexion. Cette même page sert à créer le compte lors de la première visite, puis à se connecter lors des visites suivantes.
+2. Saisir le nom de Thomas et `thomasberu0104@hotmail.com`, puis demander le lien de connexion.
+3. Ouvrir le courriel reçu et cliquer sur le lien personnel dans les 10 minutes. Le premier lien vérifié crée automatiquement le compte : il n’y a pas de mot de passe à choisir. Si aucun message n’arrive, vérifier les indésirables et Resend avant de poursuivre.
 4. Dans PowerShell :
 
 ```powershell
@@ -193,22 +197,40 @@ npm run admin -- --email thomasberu0104@hotmail.com --remote
 
 L’accès administrateur de production exige aussi Cloudflare Access :
 
-6. Dans Cloudflare One/Zero Trust, configurer un accès pour l’équipe, puis créer une application **Self-hosted** avec protection par nom d’hôte/chemin.
-7. Dans cette application, inclure les chemins du vrai site `/admin` et `/api/admin/*`. Garder le reste du site public, notamment les webhooks de paiement.
-8. Ajouter une règle d’accès limitée au courriel de Thomas, puis aux membres autorisés. Configurer un fournisseur d’identité et une politique avec second facteur; le simple code reçu par courriel n’est pas, à lui seul, une preuve de second facteur.
-9. Copier le domaine d’équipe, de la forme `equipe.cloudflareaccess.com`, et le fournir à :
+6. Dans **Zero Trust → Contrôles Access → Applications**, créer ou modifier une seule application **Auto-hébergée et privée**, nommée `Ride For Brains — Administration`.
+7. Ajouter les deux noms d’hôte publics ci-dessous dans cette même application. Garder le reste du site public, notamment les webhooks de paiement.
+
+| Domaine | Sous-domaine | Chemin |
+| --- | --- | --- |
+| `rideforbrains.ca` | Vide | `/admin` |
+| `rideforbrains.ca` | Vide | `/api/admin/*` |
+
+8. Associer une politique `Accès Thomas` : action **Autoriser**, règle **Inclure → E-mails → thomasberu0104@hotmail.com**. Laisser les réglages MFA de cette politique hériter de l’application.
+9. Ajouter d’abord la méthode de connexion par courriel dans **Zero Trust → Intégrations → Fournisseurs d’identité / Identity providers → Ajouter un fournisseur d’identité → One-time PIN / Code à usage unique**. Les nouveaux comptes proposent seulement le fournisseur **Cloudflare** par défaut; le code par courriel n’est plus ajouté automatiquement. Revenir ensuite dans l’application, sous **Authentification → Identité**, et sélectionner **One-time PIN** pour recevoir le code d’identification par courriel.
+10. Dans **Zero Trust → Contrôles Access → Paramètres Access**, trouver **Autoriser l’authentification multifacteur / Allow multi-factor authentication (MFA)**. Autoriser la méthode **Application d’authentification / Authenticator application (TOTP)**, choisir une durée de 1 heure et enregistrer.
+11. Revenir dans **Applications → cette application → Authentification → MFA**. Choisir **Paramètres MFA personnalisés / Custom MFA settings**, sélectionner **Application d’authentification (TOTP)** et une durée de 1 heure, puis enregistrer. Le code de courriel identifie la personne; le code de son application d’authentification apporte le second facteur.
+12. Trouver le domaine d’équipe dans **Zero Trust → Paramètres → Nom et domaine de l’équipe / Team name and domain**; selon l’interface, cette rubrique se trouve sous **Pages personnalisées / Custom pages**. Copier le domaine réel qui finit par `.cloudflareaccess.com`, sans `https://` ni chemin, puis lancer dans PowerShell :
 
 ```powershell
 npx wrangler secret put ACCESS_TEAM_DOMAIN
 ```
 
-10. Copier l’**Application Audience (AUD)** de cette application et le fournir à :
+Coller le domaine réel lorsque PowerShell le demande. Le domaine visible dans la configuration de Thomas est `rapid-hat-4b57.cloudflareaccess.com`. `equipe.cloudflareaccess.com` était seulement un exemple.
+
+13. Activer d’abord le portail dans **Contrôles Access → Paramètres Access → Gérer votre App Launcher / Manage your App Launcher → Gérer**. Dans **Policies / Stratégies**, associer la politique `Accès Thomas` si elle limite bien l’accès à `thomasberu0104@hotmail.com`, ou créer une règle **Autoriser → Inclure → E-mails → thomasberu0104@hotmail.com**. Dans **Authentication / Authentification**, sélectionner **One-time PIN**, puis enregistrer. Cette règle concerne l’accès au portail; elle ne remplace pas la protection des deux chemins d’administration.
+
+Ouvrir ensuite https://rapid-hat-4b57.cloudflareaccess.com pour accéder au portail Access. Se connecter avec `thomasberu0104@hotmail.com`, puis ouvrir **Account / Compte → MFA devices / Appareils MFA → Add an MFA device**. Choisir l’application d’authentification, scanner le QR avec Microsoft Authenticator ou Google Authenticator sur son téléphone et confirmer avec le code affiché. Garder le QR privé. Si le portail affiche « Please contact your administrator to enable the Access App Launcher », reprendre l’activation du portail décrite ci-dessus.
+14. Dans **Contrôles Access → Applications → cette application → Configurer → Paramètres supplémentaires / Additional settings**, copier **Application Audience (AUD) Tag**, puis lancer :
 
 ```powershell
 npx wrangler secret put ACCESS_AUD
 ```
 
-11. Ouvrir `/admin`, passer la protection Cloudflare et utiliser le même courriel que celui du compte du site.
+Coller la valeur AUD lorsque PowerShell la demande. Les deux chemins partagent cette application et donc cette même valeur AUD; aucune deuxième application n’est nécessaire.
+
+15. Ouvrir https://rideforbrains.ca/admin, passer la protection Cloudflare avec le code de courriel et le second facteur, puis utiliser le même courriel que celui du compte du site. Vérifier aussi que la page d’accueil et la connexion participant restent accessibles sans cette protection administrateur.
+
+Références : [MFA indépendant](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/independent-mfa/), [MFA de l’application](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/mfa-requirements/), [domaine d’équipe](https://developers.cloudflare.com/cloudflare-one/faq/getting-started-faq/), [trouver l’AUD](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/#get-your-aud-tag).
 
 **Résultat attendu : l’administration affiche le rôle de Thomas et les véritables données de la base.** Si un réglage demande un abonnement, examiner l’offre et le budget avant de l’activer. Cette étape concerne une vraie protection d’accès : elle doit être vérifiée, pas contournée pour faire disparaître un message d’erreur.
 
@@ -238,10 +260,12 @@ npm install -g @stripe/cli
 
 ```powershell
 stripe login
-stripe listen --forward-to localhost:8787/api/webhooks/stripe
+stripe listen --all-snapshot --forward-to http://localhost:8787/api/webhooks/stripe
 ```
 
-7. Garder cette deuxième fenêtre ouverte. Elle affiche un secret `whsec_…`. Le mettre dans le fichier local `.dev.vars` :
+Le message « must specify events to forward using --events, --all-snapshot, or --all-thin » signifie que la sélection des événements manque. L’option `--all-snapshot` ci-dessus écoute les événements classiques du sandbox utilisés par le site. La commande reste en mode test et doit rester ouverte.
+
+7. Attendre le message `Ready!` dans cette deuxième fenêtre et la garder ouverte. Elle affiche un secret `whsec_…`. Le mettre dans le fichier local `.dev.vars` :
 
 ```text
 STRIPE_WEBHOOK_SECRET=COLLER_LE_SECRET_LOCAL_ICI
