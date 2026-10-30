@@ -1,0 +1,80 @@
+
+> ride-for-brains@0.1.0 test
+> npm run build:worker && vite build --config vite.tasks.config.ts --configLoader runner && node --test --test-concurrency=1 tests/app.test.mjs
+
+
+> ride-for-brains@0.1.0 build:worker
+> vite build --config vite.worker.config.ts --configLoader runner
+
+vite v7.3.7 building ssr environment for production...
+transforming...
+node_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 1578 modules transformed.
+rendering chunks...
+work/server/index.js  2,892.90 kB
+✓ built in 4.83s
+vite v7.3.7 building ssr environment for production...
+transforming...
+✓ 195 modules transformed.
+rendering chunks...
+work/tasks/index.js  672.04 kB
+✓ built in 711ms
+✔ Public configuration contains exactly the supplied activities and no invented place (1896.6196ms)
+2026-10-30T01:21:05.695Z WARN [Better Auth]: Rate limiting could not determine a client IP and is falling back to a single shared per-path bucket. Ensure your runtime forwards a trusted client IP header, then set `advanced.ipAddress.ipAddressHeaders` or `advanced.ipAddress.trustedProxies` so the address can be resolved.
+✔ Magic link authentication creates a verified account and cannot be reused (390.8659ms)
+✔ Unauthenticated and foreign-origin mutations are rejected (228.0651ms)
+✔ Free registration is persisted, confirmed, has an opaque ticket and local confirmation (388.6724ms)
+✔ Paid registration stays pending even after visiting the success URL; signed payment confirms it (479.3162ms)
+Error: Rapprochement Stripe impossible
+✔ Invalid signature and wrong amount cannot confirm a payment (389.4685ms)
+✔ Abandoned session expires; failed payment cannot create a ticket (375.0694ms)
+Error: D1_ERROR: CAPACITY_EXCEEDED: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+✔ Two concurrent baskets for the last place produce one success and one atomic refusal (364.816ms)
+Error: D1_ERROR: CAPACITY_EXCEEDED: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+✔ Multi-person basket rolls back entirely when one activity is full (372.8417ms)
+✔ Idempotent basket creation produces one order (360.3728ms)
+✔ Late payment can confirm if a place remains; older expiration does not undo confirmation (435.81ms)
+✔ Late paid session after quota was consumed is marked paid_review without issuing a ticket (497.3093ms)
+Error: D1_ERROR: PROMO_UNAVAILABLE: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+✔ Invalid, expired and exhausted promotion codes are refused, and a 100% code is genuinely free (415.3328ms)
+✔ Forms and terms are validated server-side; medical or extra answers are not retained (389.6198ms)
+✔ Participant isolation blocks another person’s ticket and updates (475.6078ms)
+✔ Admin, organizer and check-in roles are enforced on every API (697.3311ms)
+✔ Valid ticket scans once; only authorized staff can undo a presence (611.8308ms)
+✔ Publishing a form preserves old snapshots and rejects stale submissions (475.4101ms)
+✔ Mail preview, explicit recipient count, local queue and deduplication all work (502.1589ms)
+✔ Marketing respects consent and unsubscribe, and privacy requests are recorded (542.8359ms)
+✔ CSV export neutralizes spreadsheet formulas and logs the export (547.701ms)
+✔ Contact and volunteer submissions are stored without pretending an email was sent (259.253ms)
+✔ Refund webhook reconciles full and partial refunds and ignores duplicate events (462.7716ms)
+✔ Failed payment is separate from expiry and never issues a ticket (361.7831ms)
+✔ Drafts are private, retain partial input, and disappear after actual registration (484.2261ms)
+✔ Templates persist in shared storage with permissions (422.4497ms)
+✔ Original event policy remains attached to a paid order after event settings change (424.3446ms)
+✔ Cancellation under 15 days refunds zero and invalidates the ticket (406.7002ms)
+✔ Waitlist is a real stored request only when an activity is full (388.1393ms)
+✔ Reducing a quota below actual reservations is blocked in the database (354.0137ms)
+✔ Mail provider errors retry safely and acceptance is not misreported as delivery (1991.2355ms)
+✔ Refund queue calls the provider with an idempotency key and reconciles a successful response (2224.0966ms)
+✔ Server rejects a price changed after the participant reviewed the amount (471.2465ms)
+✔ Webhook recovers a session whose provider ID failed to persist at checkout creation (477.2085ms)
+✔ Payment already fully refunded before its first webhook never issues a confirmed ticket (495.2966ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 35
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20585.1278

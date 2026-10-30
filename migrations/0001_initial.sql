@@ -1,0 +1,43 @@
+PRAGMA foreign_keys=ON;
+CREATE TABLE user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, emailVerified INTEGER NOT NULL, image TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE session (id TEXT PRIMARY KEY, expiresAt INTEGER NOT NULL, token TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, ipAddress TEXT, userAgent TEXT, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE);
+CREATE INDEX session_user ON session(userId);
+CREATE TABLE account (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, providerId TEXT NOT NULL, userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE, accessToken TEXT, refreshToken TEXT, idToken TEXT, accessTokenExpiresAt INTEGER, refreshTokenExpiresAt INTEGER, scope TEXT, password TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE INDEX account_user ON account(userId);
+CREATE TABLE verification (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, expiresAt INTEGER NOT NULL, createdAt INTEGER, updatedAt INTEGER);
+CREATE INDEX verification_identifier ON verification(identifier);
+CREATE TABLE staff (user_id TEXT PRIMARY KEY REFERENCES user(id), role TEXT NOT NULL CHECK(role IN ('admin','organizer','checkin')), permissions TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE activities (id TEXT PRIMARY KEY, name TEXT NOT NULL, sport TEXT NOT NULL, distance TEXT NOT NULL, price INTEGER NOT NULL CHECK(price>=0), capacity INTEGER CHECK(capacity IS NULL OR capacity>0), opens_at INTEGER, closes_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1, form_version INTEGER NOT NULL DEFAULT 1, route TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE forms (activity_id TEXT NOT NULL REFERENCES activities(id), version INTEGER NOT NULL, fields TEXT NOT NULL, published_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY(activity_id,version));
+CREATE TABLE promos (code TEXT PRIMARY KEY COLLATE NOCASE, percent INTEGER NOT NULL CHECK(percent BETWEEN 1 AND 100), max_uses INTEGER CHECK(max_uses IS NULL OR max_uses>0), expires_at INTEGER, active INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES user(id), request_key TEXT NOT NULL, amount INTEGER NOT NULL CHECK(amount>=0), currency TEXT NOT NULL DEFAULT 'cad', status TEXT NOT NULL CHECK(status IN ('draft','pending','confirmed','expired','failed','paid_review','cancelled','refunding','partially_refunded','refunded')), promo TEXT REFERENCES promos(code), discount_percent INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL, stripe_session TEXT UNIQUE, payment_intent TEXT UNIQUE, refunded INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT (unixepoch()), UNIQUE(user_id,request_key));
+CREATE INDEX orders_user ON orders(user_id,created_at);
+CREATE INDEX orders_promo ON orders(promo,status,expires_at);
+CREATE TABLE registrations (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id), activity_id TEXT NOT NULL REFERENCES activities(id), first_name TEXT NOT NULL, last_name TEXT NOT NULL, email TEXT NOT NULL, phone TEXT NOT NULL, adult INTEGER NOT NULL CHECK(adult=1), emergency_name TEXT NOT NULL, emergency_phone TEXT NOT NULL, answers TEXT NOT NULL, form_snapshot TEXT NOT NULL, form_version INTEGER NOT NULL, conditions_version TEXT NOT NULL, conditions_snapshot TEXT NOT NULL, accepted_at INTEGER NOT NULL DEFAULT (unixepoch()), photo INTEGER NOT NULL, marketing INTEGER NOT NULL, price INTEGER NOT NULL CHECK(price>=0), status TEXT NOT NULL CHECK(status IN ('draft','pending','confirmed','expired','failed','paid_review','cancelled','refunding','partially_refunded','refunded','waitlisted')), expires_at INTEGER NOT NULL, ticket TEXT NOT NULL UNIQUE, checked_at INTEGER, notes TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE INDEX registrations_activity_status ON registrations(activity_id,status,expires_at);
+CREATE INDEX registrations_order ON registrations(order_id);
+CREATE INDEX registrations_name ON registrations(last_name,first_name);
+CREATE TABLE history (id INTEGER PRIMARY KEY, registration_id TEXT NOT NULL REFERENCES registrations(id), status TEXT NOT NULL, at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE TABLE audit (id TEXT PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '{}', at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE INDEX audit_at ON audit(at);
+CREATE TABLE stripe_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, processed_at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE TABLE refund_jobs (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id), amount INTEGER NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', provider_id TEXT UNIQUE, error TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE UNIQUE INDEX one_active_refund ON refund_jobs(order_id) WHERE status IN ('queued','processing','pending');
+CREATE TABLE outbox (id TEXT PRIMARY KEY, dedupe TEXT NOT NULL UNIQUE, user_id TEXT, registration_id TEXT, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'operational', status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0, available_at INTEGER NOT NULL DEFAULT (unixepoch()), lease_until INTEGER, provider_id TEXT UNIQUE, error TEXT, created_at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE INDEX outbox_status ON outbox(status,available_at);
+CREATE TABLE unsubscribes (email TEXT PRIMARY KEY COLLATE NOCASE, token TEXT NOT NULL UNIQUE);
+CREATE TABLE submissions (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE TABLE rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at INTEGER NOT NULL);
+CREATE TABLE mail_events (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, type TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TRIGGER capacity_insert BEFORE INSERT ON registrations WHEN NEW.status IN ('pending','confirmed','partially_refunded') BEGIN
+ SELECT CASE WHEN (SELECT capacity FROM activities WHERE id=NEW.activity_id) IS NOT NULL AND (SELECT COUNT(*) FROM registrations WHERE activity_id=NEW.activity_id AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))) >= (SELECT capacity FROM activities WHERE id=NEW.activity_id) THEN RAISE(ABORT,'CAPACITY_EXCEEDED') END;
+END;
+CREATE TRIGGER capacity_update BEFORE UPDATE OF status ON registrations WHEN NEW.status IN ('confirmed','pending','partially_refunded') AND OLD.status NOT IN ('confirmed','partially_refunded','refunding') BEGIN
+ SELECT CASE WHEN (SELECT capacity FROM activities WHERE id=NEW.activity_id) IS NOT NULL AND (SELECT COUNT(*) FROM registrations WHERE activity_id=NEW.activity_id AND id!=NEW.id AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))) >= (SELECT capacity FROM activities WHERE id=NEW.activity_id) THEN RAISE(ABORT,'CAPACITY_EXCEEDED') END;
+END;
+CREATE TRIGGER promo_limit BEFORE INSERT ON orders WHEN NEW.promo IS NOT NULL BEGIN
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM promos WHERE code=NEW.promo AND active=1 AND (expires_at IS NULL OR expires_at>unixepoch()) AND (max_uses IS NULL OR max_uses>(SELECT COUNT(*) FROM orders WHERE promo=NEW.promo AND (status IN ('confirmed','paid_review','refunding','partially_refunded','refunded') OR (status='pending' AND expires_at>unixepoch()))))) THEN RAISE(ABORT,'PROMO_UNAVAILABLE') END;
+END;
+CREATE TRIGGER history_insert AFTER INSERT ON registrations BEGIN INSERT INTO history(registration_id,status) VALUES(NEW.id,NEW.status); END;
+CREATE TRIGGER history_update AFTER UPDATE OF status ON registrations WHEN OLD.status!=NEW.status BEGIN INSERT INTO history(registration_id,status) VALUES(NEW.id,NEW.status); END;
