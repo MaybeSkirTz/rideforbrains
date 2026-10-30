@@ -24,7 +24,7 @@
   ],
   "vars": {
     "APP_ENV": "production",
-    "APP_URL": "https://ride-for-brains.brainevent.workers.dev",
+    "APP_URL": "https://rideforbrains.ca",
     "PAYMENTS_MODE": "test"
   },
   "triggers": {
