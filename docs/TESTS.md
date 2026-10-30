@@ -6,7 +6,7 @@ Les tests tournent contre **Workerd + D1 via Miniflare**, par les véritables ro
 
 Les appels aux prestataires sont remplacés par des réponses HTTP explicites et toute autre sortie réseau est interdite. Il s’agit de tests d’intégration de l’application avec les contrats API; cela ne prouve pas qu’un compte Stripe test ou qu’un domaine Resend réel fonctionne.
 
-La suite finale de **41 scénarios a réussi**, sans échec ni scénario ignoré : 36 scénarios d’application et 5 scénarios de préparation de publication. Elle couvre :
+La suite finale de **47 scénarios a réussi**, sans échec ni scénario ignoré : 36 scénarios d’application, 5 scénarios de publication et 6 scénarios de connexion D1. Elle couvre :
 
 - les activités et paramètres fournis;
 - la connexion, l’usage unique du lien et les accès sans session;
@@ -25,6 +25,7 @@ La suite finale de **41 scénarios a réussi**, sans échec ni scénario ignoré
 - les remboursements partiels et complets, le rapprochement par webhook et le traitement de la file de remboursement;
 - les exports CSV et les demandes de contact/bénévolat.
 - le chargement du statut de session anonyme avant configuration externe, la récupération automatique de l’URL réelle du Worker, la conservation d’un secret existant, le passage d’un nouveau secret uniquement par stdin et l’arrêt avant publication en cas de connexion D1 invalide ou de migration échouée.
+- la réutilisation d’une base D1 existante sans création, la création uniquement après recherche, la répétition sans doublon, la conservation d’un autre identifiant déjà configuré, l’arrêt si la lecture du compte échoue et la concurrence entre deux créations.
 
 Le résultat de la dernière exécution et les éventuels scénarios ajoutés sont disponibles dans `docs/TEST-RESULTS.txt` après validation finale.
 

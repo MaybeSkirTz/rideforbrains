@@ -4,7 +4,7 @@
 
 Le compte Cloudflare de Thomas existe, mais aucune ressource distante n’a été créée par cette session. Le dépôt est prévu pour un Worker avec ressources statiques et une base D1. Aucun abonnement payant n’est activé automatiquement.
 
-**Première publication : suivre le [guide pas à pas](DEMARRAGE-PAS-A-PAS.md).** Il remplace l’ancienne procédure manuelle. Après `npm ci` et `npx wrangler login`, `npm run cloudflare:database` crée la base et configure sa connexion `DB`. `npm run deploy` vérifie et compile le projet, applique les migrations, publie le vrai Worker, récupère son adresse et crée le secret de connexion uniquement s’il n’existe pas. Aucun modèle Hello World n’est nécessaire. La configuration initiale ne contient plus de base fictive ni d’ancien identifiant à réutiliser.
+**Première publication : suivre le [guide pas à pas](DEMARRAGE-PAS-A-PAS.md).** Il remplace l’ancienne procédure manuelle. Après `npm ci` et `npx wrangler login`, `npm run cloudflare:database` relie la base existante ou la crée si elle manque, puis configure sa connexion `DB`. `npm run deploy` vérifie et compile le projet, applique les migrations, publie le vrai Worker, récupère son adresse et crée le secret de connexion uniquement s’il n’existe pas. Aucun modèle Hello World n’est nécessaire. La configuration initiale ne contient plus de base fictive ni d’ancien identifiant à réutiliser.
 
 Le secret est fourni au CLI sur son entrée standard, jamais dans les arguments ni dans Git. Les services externes sont configurés séparément selon les sections suivantes. Les procédures GitHub Actions ci-dessous restent une option avancée pour une automatisation ultérieure; elles ne sont pas nécessaires au premier déploiement par PowerShell.
 

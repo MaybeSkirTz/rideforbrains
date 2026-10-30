@@ -67,17 +67,17 @@ Un navigateur s’ouvre. Se connecter à Cloudflare et accepter la demande d’a
 
 **Résultat attendu : un message confirme la connexion.** Cette commande ne crée pas encore de site ni de base.
 
-## D. Créer la base de données du site
+## D. Relier la base de données du site
 
-Exécuter **une seule fois** :
+Exécuter :
 
 ```powershell
 npm run cloudflare:database
 ```
 
-Cette commande crée la base `ride-for-brains` et renseigne automatiquement la connexion appelée `DB` dans `wrangler.json`. Il n’y a aucun identifiant à copier et aucun lien à modifier à la main.
+Cette commande cherche d’abord une base nommée exactement `ride-for-brains` dans ton compte Cloudflare. Si elle existe, elle la relie au projet. Si elle n’existe pas, elle la crée puis la relie. Elle renseigne automatiquement la connexion appelée `DB` dans `wrangler.json`, sans supprimer de données ni créer de doublon. Il n’y a aucun identifiant à copier et aucun lien à modifier à la main.
 
-**Résultat attendu : Cloudflare confirme la création de la base.** Si le message dit qu’elle existe déjà, s’arrêter et conserver le message : il faut vérifier cette base existante plutôt qu’en créer une autre au hasard.
+**Résultat attendu : « Base existante reliée au projet » ou « Base créée et reliée au projet », puis « Connexion DB prête ».** La commande peut être relancée sans recréer la base. Si une erreur d’accès au compte apparaît, s’arrêter et conserver le message.
 
 ## E. Publier le vrai site
 

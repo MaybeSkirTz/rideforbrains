@@ -26,7 +26,7 @@ export async function publish({
     /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(databases[0].database_id)
   ) {
     throw new Error(
-      'La base du site doit d’abord être configurée. Lance npm run cloudflare:database une seule fois, puis réessaie.',
+      'La base du site doit d’abord être reliée au projet. Relance npm run cloudflare:database pour préparer cette connexion, puis réessaie.',
     );
   }
   if (!config.name || config.vars?.APP_ENV !== 'production')
