@@ -37,7 +37,7 @@ import {
   Ticket,
   Activity,
 } from 'lucide-react';
-import { api, money, statuses, date } from './api';
+import { api, downloadPrivate, money, statuses, date } from './api';
 import { Context, useApp, type Data } from './context';
 import { go, Link, Notice, Field, Button, Page, DynamicFields } from './ui';
 import { accountUrl } from '../shared/navigation';
@@ -1306,9 +1306,15 @@ function Participant() {
       )}
       <details className="privacy-tools">
         <summary>Mes données personnelles</summary>
-        <a className="text-link" href="/api/account/export" download="mes-donnees.json">
+        <button
+          type="button"
+          className="text-link"
+          onClick={() =>
+            downloadPrivate('/account/export', 'mes-donnees.json').catch((e) => setError(e.message))
+          }
+        >
           Exporter mes données <Download size={16} />
-        </a>
+        </button>
         <button
           className="text-link"
           onClick={async () => {

@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Miniflare, createFetchMock } from 'miniflare';
 import { resolve } from 'node:path';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, createHash, randomUUID } from 'node:crypto';
 import { migrate } from '../scripts/migrate.mjs';
 
 // These are integration contracts against Workerd + D1. All external HTTP is blocked,
@@ -65,6 +65,8 @@ beforeEach(async () => {
       'orders',
       'promos',
       'staff',
+      'session_privacy',
+      'auth_challenges',
       'session',
       'account',
       'verification',
@@ -104,35 +106,42 @@ async function request(path, body, cookie = '', method = body ? 'POST' : 'GET', 
   }
   return { res, status: res.status, data };
 }
+const fixturePassword = 'Test-password-2027!';
 async function login(mail = 'payer@example.test', role = null, permissions = []) {
-  const start = await request('/auth/sign-in/magic-link', {
+  const existing = await db.prepare('SELECT id FROM user WHERE email=?').bind(mail).first();
+  const start = await request('/auth/request/' + (existing ? 'sign-in' : 'create'), {
     email: mail,
-    name: 'Camille Test',
-    callbackURL: '/espace',
+    password: fixturePassword,
+    firstName: 'Camille',
+    lastName: 'Test',
+    rememberMe: true,
   });
   assert.equal(start.status, 200, JSON.stringify(start.data));
   const row = await db
     .prepare(
-      "SELECT body FROM outbox WHERE recipient=? AND subject LIKE 'Votre lien%' ORDER BY rowid DESC LIMIT 1",
+      "SELECT body FROM outbox WHERE recipient=? AND kind='login' ORDER BY rowid DESC LIMIT 1",
     )
     .bind(mail)
     .first();
-  const url = row.body.match(/http:\/\/[^\s]+/)[0];
-  const verified = await mf.dispatchFetch(url, { redirect: 'manual' });
-  assert.equal(verified.status, 302, await verified.clone().text());
-  const cookies = verified.headers
+  const code = row.body.match(/code de vérification : (\d{6})/)[1];
+  const verified = await request('/auth/verify-code', {
+    challengeId: start.data.challengeId,
+    code,
+    password: fixturePassword,
+  });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  const cookie = verified.res.headers
     .getSetCookie()
     .map((c) => c.split(';')[0])
     .join('; ');
-  const who = await request('/me', null, cookies);
-  assert.equal(who.status, 200);
-  assert.ok(who.data.user, 'No authenticated session');
+  const who = await request('/me', null, cookie);
+  assert.ok(who.data.user, JSON.stringify(who.data));
   if (role)
     await db
       .prepare('INSERT INTO staff(user_id,role,permissions) VALUES(?,?,?)')
       .bind(who.data.user.id, role, JSON.stringify(permissions))
       .run();
-  return { cookie: cookies, id: who.data.user.id, url };
+  return { cookie, id: who.data.user.id, challengeId: start.data.challengeId, code };
 }
 function participant(activityId = 'course-5', extra = {}) {
   return {
@@ -524,15 +533,16 @@ test('A public visitor can load the session endpoint before external sign-in is 
     await visitor.dispose();
   }
 });
-test('Magic link authentication creates a verified account and cannot be reused', async () => {
+test('Password and one-use code create a verified account without a redirect', async () => {
   const u = await login();
-  const row = await db.prepare('SELECT emailVerified FROM user WHERE id=?').bind(u.id).first();
-  assert.equal(row.emailVerified, 1);
-  const replay = await mf.dispatchFetch(u.url, { redirect: 'manual' });
-  assert.equal(replay.status, 302);
-  assert.match(replay.headers.get('location'), /error=/);
+  assert.equal((await request('/me', null, u.cookie)).data.user.email, 'payer@example.test');
+  const replay = await request('/auth/verify-code', {
+    challengeId: u.challengeId,
+    code: u.code,
+    password: fixturePassword,
+  });
+  assert.equal(replay.status, 400);
 });
-
 test('Production sign-in returns a clear JSON error until both mail settings are present', async () => {
   for (const mailBindings of [
     {},
@@ -547,10 +557,15 @@ test('Production sign-in returns a clear JSON error until both mail settings are
       serviceBindings: { ASSETS: () => new Response('test assets') },
     });
     try {
-      const r = await visitor.dispatchFetch('https://example.test/api/auth/sign-in/magic-link', {
+      const r = await visitor.dispatchFetch('https://example.test/api/auth/request/create', {
         method: 'POST',
         headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'test@example.test' }),
+        body: JSON.stringify({
+          email: 'test@example.test',
+          firstName: 'Camille',
+          lastName: 'Test',
+          password: fixturePassword,
+        }),
       });
       assert.equal(r.status, 503);
       assert.match(r.headers.get('content-type'), /application\/json/);
@@ -599,23 +614,32 @@ test('Production sign-in validates Turnstile, sends through Resend, and verifies
   try {
     const productionDb = await visitor.getD1Database('DB');
     await migrate(productionDb);
-    const started = await visitor.dispatchFetch(site + '/api/auth/sign-in/magic-link', {
+    const started = await visitor.dispatchFetch(site + '/api/auth/request/create', {
       method: 'POST',
       headers: { Origin: site, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: 'new-account@example.test',
-        name: 'Camille Test',
-        callbackURL: '/espace',
+        firstName: 'Camille',
+        lastName: 'Test',
+        password: fixturePassword,
+        rememberMe: true,
         turnstileToken: 'single-use-fixture',
       }),
     });
     assert.equal(started.status, 200, await started.clone().text());
     const mail = await productionDb.prepare('SELECT body,status FROM outbox').first();
     assert.equal(mail.status, 'accepted');
-    const link = mail.body.match(/https:\/\/[^\s]+/)[0];
-    const verified = await visitor.dispatchFetch(link, { redirect: 'manual' });
-    assert.equal(verified.status, 302);
-    assert.equal(verified.headers.get('location'), site + '/espace');
+    const challenge = await started.json();
+    const verified = await visitor.dispatchFetch(site + '/api/auth/verify-code', {
+      method: 'POST',
+      headers: { Origin: site, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeId: challenge.challengeId,
+        code: mail.body.match(/code de vérification : (\d{6})/)[1],
+        password: fixturePassword,
+      }),
+    });
+    assert.equal(verified.status, 200, await verified.clone().text());
     const cookie = verified.headers
       .getSetCookie()
       .map((c) => c.split(';')[0])
@@ -1428,35 +1452,43 @@ test('Payment already fully refunded before its first webhook never issues a con
   );
 });
 
-test('Account creation waits for verification and preserves the complete activity return URL', async () => {
+test('Account creation requires password and verifies email on the same page before creating a session', async () => {
   const start = await request('/auth/request/create', {
     email: 'new@example.test',
     firstName: 'Alex',
     lastName: 'Test',
+    password: fixturePassword,
+    rememberMe: true,
     returnTo: '/inscription?activite=course-10',
   });
   assert.equal(start.status, 200, JSON.stringify(start.data));
-  assert.equal(
-    await db.prepare("SELECT id FROM user WHERE email='new@example.test'").first(),
-    null,
-  );
+  const row = await db.prepare("SELECT * FROM user WHERE email='new@example.test'").first();
+  assert.equal(row.emailVerified, 0);
+  assert.equal(row.firstName, 'Alex');
+  assert.equal(row.lastName, 'Test');
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM session').first()).n, 0);
   const mail = await db
     .prepare("SELECT body FROM outbox WHERE recipient='new@example.test'")
     .first();
-  const link = mail.body.match(/http:\/\/[^\s]+/)[0];
-  const verified = await mf.dispatchFetch(link, { redirect: 'manual' });
-  assert.equal(verified.headers.get('location'), origin + '/inscription?activite=course-10');
-  const account = await db
-    .prepare("SELECT name,emailVerified FROM user WHERE email='new@example.test'")
-    .first();
-  assert.equal(account.name, 'Alex Test');
-  assert.equal(account.emailVerified, 1);
+  assert.ok(!mail.body.includes('http'));
+  const verified = await request('/auth/verify-code', {
+    challengeId: start.data.challengeId,
+    code: mail.body.match(/code de vérification : (\d{6})/)[1],
+    password: fixturePassword,
+  });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  assert.equal(verified.data.returnTo, '/inscription?activite=course-10');
+  assert.equal(
+    (await db.prepare('SELECT emailVerified FROM user WHERE id=?').bind(row.id).first())
+      .emailVerified,
+    1,
+  );
 });
-
-test('Existing-account sign-in asks for no name, preserves it, and returns to the waitlist', async () => {
+test('Existing-account sign-in preserves the name and returns to the selected waitlist', async () => {
   await login('existing@example.test');
   const r = await request('/auth/request/sign-in', {
     email: 'existing@example.test',
+    password: fixturePassword,
     returnTo: '/attente?activite=marche-5',
   });
   assert.equal(r.status, 200);
@@ -1465,49 +1497,346 @@ test('Existing-account sign-in asks for no name, preserves it, and returns to th
       "SELECT body FROM outbox WHERE recipient='existing@example.test' ORDER BY rowid DESC LIMIT 1",
     )
     .first();
-  const verified = await mf.dispatchFetch(mail.body.match(/http:\/\/[^\s]+/)[0], {
-    redirect: 'manual',
+  const verified = await request('/auth/verify-code', {
+    challengeId: r.data.challengeId,
+    code: mail.body.match(/code de vérification : (\d{6})/)[1],
+    password: fixturePassword,
   });
-  assert.equal(verified.headers.get('location'), origin + '/attente?activite=marche-5');
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  assert.equal(verified.data.returnTo, '/attente?activite=marche-5');
   assert.equal(
     (await db.prepare("SELECT name FROM user WHERE email='existing@example.test'").first()).name,
     'Camille Test',
   );
 });
-
-test('Unknown sign-in stays neutral without creating an account or verification token', async () => {
-  const r = await request('/auth/request/sign-in', { email: 'unknown@example.test' });
-  assert.equal(r.status, 200);
-  assert.deepEqual(r.data, { status: true });
-  assert.equal((await db.prepare('SELECT count(*) AS n FROM user').first()).n, 0);
-  assert.equal((await db.prepare('SELECT count(*) AS n FROM verification').first()).n, 0);
-  assert.equal((await db.prepare('SELECT count(*) AS n FROM outbox').first()).n, 0);
+test('Unknown sign-in refuses credentials without creating an account or sending mail', async () => {
+  const r = await request('/auth/request/sign-in', {
+    email: 'unknown@example.test',
+    password: fixturePassword,
+  });
+  assert.equal(r.status, 401);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM user').first()).n, 0);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM outbox').first()).n, 0);
 });
-
-test('Both account flows reject external and protocol-relative return destinations', async () => {
+test('Account flows reject unsafe return destinations and close all direct auth bypasses', async () => {
   for (const returnTo of [
     'https://evil.test',
     '//evil.test',
     '/\\evil.test',
-    '/inscription\nLocation: https://evil.test',
     '/api/account/export',
   ]) {
     const r = await request('/auth/request/create', {
       email: 'return@example.test',
       firstName: 'Alex',
       lastName: 'Test',
+      password: fixturePassword,
       returnTo,
     });
     assert.equal(r.status, 400, returnTo);
   }
-  const legacy = await request('/auth/sign-in/magic-link', {
-    email: 'return@example.test',
-    name: 'Alex',
-    callbackURL: 'https://evil.test',
-  });
-  assert.equal(legacy.status, 400);
+  for (const path of [
+    '/auth/sign-in/email',
+    '/auth/sign-up/email',
+    '/auth/sign-in/magic-link',
+    '/auth/verify-email',
+    '/auth/reset-password',
+    '/auth/sign-in/email-otp',
+  ])
+    assert.equal(
+      (await request(path, { email: 'return@example.test', password: fixturePassword })).status,
+      404,
+      path,
+    );
 });
-
+async function latestCode(address) {
+  const row = await db
+    .prepare(
+      "SELECT body FROM outbox WHERE recipient=? AND kind='login' ORDER BY rowid DESC LIMIT 1",
+    )
+    .bind(address)
+    .first();
+  return row.body.match(/code de vérification : (\d{6})/)[1];
+}
+test('Missing or short passwords never create an account', async () => {
+  for (const password of [undefined, 'short']) {
+    assert.equal(
+      (
+        await request('/auth/request/create', {
+          email: 'weak@example.test',
+          firstName: 'Alex',
+          lastName: 'Test',
+          ...(password ? { password } : {}),
+        })
+      ).status,
+      400,
+    );
+  }
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM user').first()).n, 0);
+});
+test('Five wrong codes lock the challenge, including after a resend attempt', async () => {
+  const r = await request('/auth/request/create', {
+    email: 'lock@example.test',
+    firstName: 'Alex',
+    lastName: 'Test',
+    password: fixturePassword,
+  });
+  assert.equal(r.status, 200);
+  const code = await latestCode('lock@example.test'),
+    wrong = code === '000000' ? '000001' : '000000';
+  const stored = await db
+    .prepare('SELECT * FROM auth_challenges WHERE id=?')
+    .bind(r.data.challengeId)
+    .first();
+  assert.notEqual(stored.code_hash, code);
+  assert.ok(stored.expires_at - stored.created_at <= 600);
+  for (let i = 0; i < 5; i++)
+    assert.equal(
+      (
+        await request('/auth/verify-code', {
+          challengeId: r.data.challengeId,
+          code: wrong,
+          password: fixturePassword,
+        })
+      ).status,
+      400,
+    );
+  assert.equal(
+    (
+      await request('/auth/verify-code', {
+        challengeId: r.data.challengeId,
+        code,
+        password: fixturePassword,
+      })
+    ).status,
+    400,
+  );
+  await request('/auth/resend-code', { challengeId: r.data.challengeId });
+  assert.equal(
+    (
+      await request('/auth/verify-code', {
+        challengeId: r.data.challengeId,
+        code,
+        password: fixturePassword,
+      })
+    ).status,
+    400,
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM session').first()).n, 0);
+});
+test('Expired codes cannot activate an account', async () => {
+  const r = await request('/auth/request/create', {
+    email: 'expiry@example.test',
+    firstName: 'Alex',
+    lastName: 'Test',
+    password: fixturePassword,
+  });
+  const code = await latestCode('expiry@example.test');
+  await db
+    .prepare('UPDATE auth_challenges SET expires_at=unixepoch()-1 WHERE id=?')
+    .bind(r.data.challengeId)
+    .run();
+  assert.equal(
+    (
+      await request('/auth/verify-code', {
+        challengeId: r.data.challengeId,
+        code,
+        password: fixturePassword,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (await db.prepare("SELECT emailVerified FROM user WHERE email='expiry@example.test'").first())
+      .emailVerified,
+    0,
+  );
+});
+test('Resending a code has a server cooldown and invalidates the preceding code', async () => {
+  const r = await request('/auth/request/create', {
+    email: 'resend@example.test',
+    firstName: 'Alex',
+    lastName: 'Test',
+    password: fixturePassword,
+    rememberMe: true,
+  });
+  const first = await latestCode('resend@example.test');
+  assert.equal(
+    (await request('/auth/resend-code', { challengeId: r.data.challengeId })).status,
+    429,
+  );
+  await db
+    .prepare('UPDATE auth_challenges SET sent_at=unixepoch()-61 WHERE id=?')
+    .bind(r.data.challengeId)
+    .run();
+  await db
+    .prepare('UPDATE rate_limits SET reset_at=unixepoch()-1 WHERE key=?')
+    .bind(
+      createHash('sha256')
+        .update('auth-cooldown:' + r.data.challengeId)
+        .digest('hex'),
+    )
+    .run();
+  assert.equal(
+    (await request('/auth/resend-code', { challengeId: r.data.challengeId })).status,
+    200,
+  );
+  const second = await latestCode('resend@example.test');
+  // Extremely rarely the random replacement is identical; its old digest is still replaced atomically.
+  if (first !== second)
+    assert.equal(
+      (
+        await request('/auth/verify-code', {
+          challengeId: r.data.challengeId,
+          code: first,
+          password: fixturePassword,
+        })
+      ).status,
+      400,
+    );
+  assert.equal(
+    (
+      await request('/auth/verify-code', {
+        challengeId: r.data.challengeId,
+        code: second,
+        password: fixturePassword,
+      })
+    ).status,
+    200,
+  );
+});
+test('Temporary sign-in is bound to its tab; remembered sign-in survives without a tab key', async () => {
+  const persistent = await login('sessions@example.test');
+  assert.ok(persistent.cookie);
+  assert.ok((await request('/me', null, persistent.cookie)).data.user);
+  const r = await request('/auth/request/sign-in', {
+    email: 'sessions@example.test',
+    password: fixturePassword,
+    rememberMe: false,
+  });
+  const result = await request('/auth/verify-code', {
+    challengeId: r.data.challengeId,
+    code: await latestCode('sessions@example.test'),
+    password: fixturePassword,
+  });
+  assert.equal(result.status, 200, JSON.stringify(result.data));
+  assert.match(result.data.tabKey, /^[a-f0-9]{64}$/);
+  const cookies = result.res.headers.getSetCookie();
+  assert.ok(cookies.some((c) => c.includes('session_token=') && !/max-age|expires=/i.test(c)));
+  const cookie = cookies.map((c) => c.split(';')[0]).join('; ');
+  assert.equal((await request('/me', null, cookie)).data.user, null);
+  assert.equal((await request('/registrations', null, cookie)).status, 401);
+  assert.ok(
+    (await request('/me', null, cookie, 'GET', { 'X-RFB-Session': result.data.tabKey })).data.user,
+  );
+  assert.equal(
+    (await request('/me', null, cookie, 'GET', { 'X-RFB-Session': 'wrong-tab' })).data.user,
+    null,
+  );
+  assert.equal(
+    (await request('/account/export', null, cookie, 'GET', { 'X-RFB-Session': result.data.tabKey }))
+      .status,
+    200,
+  );
+  assert.equal((await request('/auth/sign-out', {}, cookie)).status, 200);
+  assert.equal(
+    (await request('/me', null, cookie, 'GET', { 'X-RFB-Session': result.data.tabKey })).data.user,
+    null,
+  );
+});
+test('Old passwordless accounts set a password by code without replacing identity, roles or purchases', async () => {
+  const u = await login('legacy@example.test', 'admin');
+  const o = await create(u.cookie);
+  await db
+    .prepare("DELETE FROM account WHERE userId=? AND providerId='credential'")
+    .bind(u.id)
+    .run();
+  const start = await request('/auth/request/password', {
+    email: 'legacy@example.test',
+    rememberMe: true,
+  });
+  assert.equal(start.status, 200);
+  const finished = await request('/auth/verify-code', {
+    challengeId: start.data.challengeId,
+    code: await latestCode('legacy@example.test'),
+    newPassword: 'New-password-2027!',
+  });
+  assert.equal(finished.status, 200, JSON.stringify(finished.data));
+  assert.equal(
+    (await db.prepare('SELECT user_id FROM orders WHERE id=?').bind(o.id).first()).user_id,
+    u.id,
+  );
+  assert.equal(
+    (await db.prepare('SELECT role FROM staff WHERE user_id=?').bind(u.id).first()).role,
+    'admin',
+  );
+  assert.equal(
+    (await db.prepare('SELECT name FROM user WHERE id=?').bind(u.id).first()).name,
+    'Camille Test',
+  );
+  assert.equal(
+    (await request('/me', null, u.cookie)).data.user,
+    null,
+    'Old sessions revoked by password setup',
+  );
+  const cookies = finished.res.headers.getSetCookie();
+  assert.ok(cookies.some((c) => c.includes('session_token=') && /max-age=/i.test(c)));
+  const cookie = cookies.map((c) => c.split(';')[0]).join('; ');
+  assert.equal((await request('/me', null, cookie)).data.user.id, u.id);
+  const credentials = await request('/auth/request/sign-in', {
+    email: 'legacy@example.test',
+    password: 'New-password-2027!',
+  });
+  assert.equal(credentials.status, 200);
+  assert.equal(
+    (
+      await request('/auth/request/sign-in', {
+        email: 'legacy@example.test',
+        password: fixturePassword,
+      })
+    ).status,
+    401,
+  );
+});
+test('Password recovery is neutral for unknown addresses and sends no email to them', async () => {
+  const r = await request('/auth/request/password', { email: 'unknown@example.test' });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.challengeId);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM user').first()).n, 0);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM outbox').first()).n, 0);
+});
+test('Authentication codes are hidden from the admin mail journal and participant messages', async () => {
+  const admin = await login('codes-admin@example.test', 'admin');
+  const start = await request('/auth/request/password', { email: 'codes-admin@example.test' });
+  assert.equal(start.status, 200);
+  const code = await latestCode('codes-admin@example.test');
+  const journal = await request('/admin/mail', null, admin.cookie);
+  assert.equal(journal.status, 200);
+  assert.ok(journal.data.every((row) => row.kind !== 'login'));
+  assert.ok(!JSON.stringify(journal.data).includes(code));
+  const messages = (await request('/registrations', null, admin.cookie)).data.messages;
+  assert.ok(!JSON.stringify(messages).includes(code));
+});
+test('A code cannot bypass a wrong password and two concurrent verifications create only one session', async () => {
+  const start = await request('/auth/request/create', {
+    email: 'race@example.test',
+    firstName: 'Alex',
+    lastName: 'Test',
+    password: fixturePassword,
+    rememberMe: true,
+  });
+  const code = await latestCode('race@example.test'),
+    body = { challengeId: start.data.challengeId, code, password: fixturePassword };
+  assert.equal(
+    (await request('/auth/verify-code', { ...body, password: 'wrong-password' })).status,
+    400,
+  );
+  const results = await Promise.all([
+    request('/auth/verify-code', body),
+    request('/auth/verify-code', body),
+  ]);
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 400]);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM session').first()).n, 1);
+});
 test('A pre-account registration draft is encrypted, HttpOnly, private and claimed once after sign-in', async () => {
   const p = {
     ...participant('course-10'),

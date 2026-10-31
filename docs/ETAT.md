@@ -22,3 +22,7 @@ La migration `0007_order_removals.sql` ajoute un retrait logique, réservé aux 
 Le remboursement suit la politique figée à l’achat et porte sur le montant réellement payé après code promo, diminué des remboursements déjà effectués. Les remboursements en cours ou à rapprocher bloquent un nouveau retrait. Deux notifications opérationnelles distinctes confirment le retrait puis, si applicable, le remboursement effectivement confirmé par Stripe, à l’acheteur et à l’admin qui agit. Une seule copie est créée si c’est la même adresse.
 
 Vérifications : TypeScript et compilation passent; 79 tests isolés réussissent. Le parcours a aussi été exercé dans le navigateur sur une base fictive locale sans clé Stripe ni Resend. Le code du retrait n’a pas encore été publié en production.
+
+## Connexion et photos
+
+Le nouveau parcours mot de passe + code à 6 chiffres, la récupération de mot de passe et la correction de validation des photos sont préparés localement. Les 88 tests passent, avec recette navigateur locale et vérification du formulaire à 390 px. Voir [les changements et la migration des comptes](CONNEXION-ET-PHOTOS.md). Les réglages des services existants ne sont pas remplacés. Cette mise à jour n’a pas encore été publiée en production.

@@ -1,3 +1,33 @@
+const tabStorageKey = 'rfb-tab-session';
+function sessionHeaders(): Record<string, string> {
+  try {
+    const key = sessionStorage.getItem(tabStorageKey);
+    return key ? { 'X-RFB-Session': key } : {};
+  } catch {
+    return {};
+  }
+}
+export function saveSessionPreference(tabKey: string | null) {
+  try {
+    if (tabKey) sessionStorage.setItem(tabStorageKey, tabKey);
+    else sessionStorage.removeItem(tabStorageKey);
+  } catch {
+    if (tabKey)
+      throw new Error(
+        'Autorisez le stockage de cet onglet pour conserver cette connexion temporaire.',
+      );
+  }
+}
+export async function downloadPrivate(path: string, filename: string) {
+  const res = await fetch('/api' + path, { credentials: 'same-origin', headers: sessionHeaders() });
+  if (!res.ok) throw new Error('Le téléchargement a échoué. Vérifiez votre connexion.');
+  const url = URL.createObjectURL(await res.blob()),
+    a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 export async function api<T = any>(
   path: string,
   body?: unknown,
@@ -6,7 +36,7 @@ export async function api<T = any>(
   const res = await fetch('/api' + path, {
     method,
     credentials: 'same-origin',
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...sessionHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -30,6 +60,7 @@ export async function api<T = any>(
     throw new Error(
       'Le serveur a renvoyé une réponse inattendue. Réessayez dans quelques minutes.',
     );
+  if (path === '/auth/sign-out') saveSessionPreference(null);
   return data as T;
 }
 export const money = (cents: number) =>

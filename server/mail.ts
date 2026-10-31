@@ -46,6 +46,24 @@ export async function processMail(env: Env) {
     .bind(now(), now())
     .all<any>();
   for (const row of rows.results) {
+    if (row.kind === 'login') {
+      const id = row.dedupe.startsWith('auth-code:') ? row.dedupe.split(':')[1] : '';
+      const active =
+        id &&
+        (await env.DB.prepare(
+          'SELECT 1 FROM auth_challenges WHERE id=? AND used_at IS NULL AND expires_at>unixepoch() AND attempts<5',
+        )
+          .bind(id)
+          .first());
+      if (!active) {
+        await env.DB.prepare(
+          "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Code expiré ou utilisé' WHERE id=?",
+        )
+          .bind(row.id)
+          .run();
+        continue;
+      }
+    }
     // Provider idempotency is retained for 24 hours. Older ambiguous sends need review.
     if (row.attempts > 0 && row.created_at < now() - 23 * 3600) {
       await env.DB.prepare(

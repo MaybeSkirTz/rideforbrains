@@ -17,7 +17,7 @@ import { digest, opaqueToken, seal, unseal } from './crypto';
 import { countEvent, funnelEvents } from './analytics';
 import type { AppContext, Env, Actor } from './types';
 import { isLocal, uuid, now, json, parse } from './types';
-import { auth } from './auth';
+import { passwordAuthRoutes, authenticatedSession } from './password-auth';
 import {
   orderSchema,
   validateAnswers,
@@ -98,7 +98,7 @@ async function botCheck(c: any, token: string | undefined) {
 }
 async function actor(c: any): Promise<Actor> {
   if (!c.req.header('cookie')) return fail(401, 'Connectez-vous pour continuer.');
-  const session = await auth(c.env).api.getSession({ headers: c.req.raw.headers });
+  const session = await authenticatedSession(c);
   if (!session?.user?.emailVerified) return fail(401, 'Connectez-vous pour continuer.');
   const staff = await c.env.DB.prepare('SELECT * FROM staff WHERE user_id=?')
     .bind(session.user.id)
@@ -205,66 +205,7 @@ app.get('/api/public', async (c) => {
     },
   });
 });
-const accountRequest = z
-  .object({
-    email,
-    firstName: z.string().trim().min(1).max(100).optional(),
-    lastName: z.string().trim().min(1).max(100).optional(),
-    returnTo: z.string().max(1500).optional(),
-    turnstileToken: z.string().optional(),
-  })
-  .strict();
-app.post('/api/auth/request/:intent', async (c) => {
-  const intent = z.enum(['create', 'sign-in']).parse(c.req.param('intent'));
-  const input = accountRequest.parse(await c.req.json());
-  if (intent === 'create' && (!input.firstName || !input.lastName))
-    fail(400, 'Le prénom et le nom sont requis pour créer votre compte.');
-  const callbackURL = safeReturnUrl(input.returnTo || '/espace', '');
-  if (!callbackURL) fail(400, 'Cette destination de retour n’est pas autorisée.');
-  if (!isLocal(c.env) && (!c.env.RESEND_API_KEY || !c.env.MAIL_FROM))
-    fail(503, 'La connexion par courriel n’est pas encore activée. Contactez l’organisation.');
-  await limited(c.env, 'login:' + (c.req.header('cf-connecting-ip') || 'local'), 5, 600);
-  await botCheck(c, input.turnstileToken);
-  const existing = await c.env.DB.prepare('SELECT id FROM user WHERE email=? AND emailVerified=1')
-    .bind(input.email)
-    .first();
-  // Same outward response: requesting sign-in must never create a new account or disclose its existence.
-  if (intent === 'sign-in' && !existing) return c.json({ status: true });
-  const headers = new Headers(c.req.raw.headers);
-  headers.delete('content-length');
-  const res = await auth(c.env).handler(
-    new Request(new URL('/api/auth/sign-in/magic-link', c.env.APP_URL), {
-      method: 'POST',
-      headers,
-      body: json({
-        email: input.email,
-        ...(intent === 'create' ? { name: input.firstName + ' ' + input.lastName } : {}),
-        callbackURL,
-        errorCallbackURL: '/connexion?erreur=lien',
-      }),
-    }),
-  );
-  if (!res.ok)
-    return c.json(
-      { error: 'Le lien n’a pas pu être demandé. Réessayez dans quelques minutes.' },
-      res.status as any,
-    );
-  c.executionCtx.waitUntil(countEvent(c.env, 'account_request').catch(() => {}));
-  return c.json({ status: true });
-});
-app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
-  if (c.req.path.endsWith('/sign-in/magic-link') && c.req.method === 'POST') {
-    if (!isLocal(c.env) && (!c.env.RESEND_API_KEY || !c.env.MAIL_FROM))
-      fail(503, 'La connexion par courriel n’est pas encore activée. Contactez l’organisation.');
-    await limited(c.env, 'login:' + (c.req.header('cf-connecting-ip') || 'local'), 5, 600);
-    const input = (await c.req.raw.clone().json()) as any;
-    for (const field of ['callbackURL', 'newUserCallbackURL', 'errorCallbackURL'])
-      if (input[field] && !safeReturnUrl(input[field], ''))
-        fail(400, 'Cette destination de retour n’est pas autorisée.');
-    await botCheck(c, input.turnstileToken);
-  }
-  return auth(c.env).handler(c.req.raw);
-});
+passwordAuthRoutes(app, { fail, limited, botCheck });
 app.get('/api/me', async (c) => {
   try {
     return c.json({ user: await actor(c) });
@@ -1240,7 +1181,7 @@ app.get('/api/admin/mail', async (c) => {
   return c.json(
     (
       await c.env.DB.prepare(
-        "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
+        "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND kind!='login' AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
       ).all()
     ).results,
   );
@@ -1510,6 +1451,7 @@ export async function scheduled(env: Env) {
     ),
     env.DB.prepare('DELETE FROM rate_limits WHERE reset_at<unixepoch()-86400'),
     env.DB.prepare('DELETE FROM verification WHERE expiresAt<?').bind(Date.now() - 86400000),
+    env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at<unixepoch()-86400'),
     env.DB.prepare('DELETE FROM session WHERE expiresAt<?').bind(Date.now() - 86400000),
     env.DB.prepare('DELETE FROM guest_drafts WHERE expires_at<unixepoch()'),
     env.DB.prepare(

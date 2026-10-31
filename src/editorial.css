@@ -2301,3 +2301,17 @@ footer .footer-brand {
 .removal-dialog .actions {
   margin-top: 25px;
 }
+.account-code .otp-input {
+  max-width: 19rem;
+  font-size: 1.8rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+.content-image-preview {
+  display: block;
+  max-width: min(100%, 340px);
+  max-height: 240px;
+  object-fit: contain;
+  margin-block: 16px;
+}

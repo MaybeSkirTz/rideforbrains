@@ -2,9 +2,13 @@
 
 La campagne actuelle et ses mesures sont décrites dans [AUDIT-2027.md](AUDIT-2027.md). Les résultats synthétiques sont dans [TEST-RESULTS.txt](TEST-RESULTS.txt). Les prestataires sont simulés; les tests ne prouvent pas une transaction réelle, une livraison à Hotmail ou une lecture caméra sur téléphone physique.
 
-## Ajout : photos R2 et retrait des commandes
+## Campagne actuelle : connexion et photos
 
-Les **79 tests passent**. Les six nouveaux contrats vérifient : liaison R2 avec stockage/lecture WebP et permissions; retrait groupé après promotion de 25 % (3 × 15 $ → 33,75 $ remboursables); exclusion des listes/statistiques/exports/QR et conservation privée; confirmations dédupliquées à l’acheteur et à l’admin; refus sans rôle admin ou sans confirmation; politique figée de 15 jours et promotion gratuite; déduction d’un remboursement antérieur; blocage d’un remboursement à rapprocher; paiement tardif après retrait sans réactivation de billet ni double remboursement.
+Les **88 tests passent**, y compris les anciens scénarios Stripe/inscriptions. La nouvelle campagne couvre le mot de passe et le code de vérification, la récupération des anciens comptes, les sessions temporaires et persistantes, les tentatives invalides/expirées/concurrentes, les routes de contournement fermées, la confidentialité des codes et l’enregistrement d’une photo R2. La recette navigateur et les limites de vérification sont détaillées dans [CONNEXION-ET-PHOTOS.md](CONNEXION-ET-PHOTOS.md).
+
+## Campagne précédente : photos R2 et retrait des commandes
+
+La campagne précédente comptait **79 tests réussis**. Les six nouveaux contrats vérifient : liaison R2 avec stockage/lecture WebP et permissions; retrait groupé après promotion de 25 % (3 × 15 $ → 33,75 $ remboursables); exclusion des listes/statistiques/exports/QR et conservation privée; confirmations dédupliquées à l’acheteur et à l’admin; refus sans rôle admin ou sans confirmation; politique figée de 15 jours et promotion gratuite; déduction d’un remboursement antérieur; blocage d’un remboursement à rapprocher; paiement tardif après retrait sans réactivation de billet ni double remboursement.
 
 La migration incrémentale conserve les paramètres, les commandes, les participations et leurs conditions existantes. Les montants proviennent de la commande payée et non du tarif actuel de l’activité. Tous les prestataires des tests sont simulés, avec le réseau externe bloqué.
 

@@ -12,7 +12,7 @@ On avance dans l’ordre. Après chaque commande, attendre de revoir une ligne c
 | GitHub                                  | La sauvegarde du code et son historique              |
 | Cloudflare Worker                       | L’endroit où fonctionne le site public               |
 | Cloudflare D1                           | Le cahier dans lequel sont enregistrés les dossiers  |
-| Resend                                  | L’expédition des liens de connexion et confirmations |
+| Resend                                  | L’expédition des codes de connexion et confirmations |
 | Stripe                                  | Les paiements par carte                              |
 
 **Premier objectif : afficher le vrai site sur Internet, inscriptions fermées.** Ensuite viennent les courriels, l’administration et les paiements. Un nom de domaine personnalisé n’est pas nécessaire pour ce premier affichage.
@@ -99,7 +99,7 @@ Adresse de publication : https://ride-for-brains.…workers.dev
 
 Ouvrir **l’adresse réellement affichée**, pas l’exemple ci-dessus.
 
-**Résultat attendu : l’accueil Ride For Brains apparaît sur Internet.** Les inscriptions restent fermées. Les liens de connexion, les formulaires publics protégés, l’administration et les paiements demandent encore la configuration des services ci-dessous.
+**Résultat attendu : l’accueil Ride For Brains apparaît sur Internet.** Les inscriptions restent fermées. Les codes de connexion, les formulaires publics protégés, l’administration et les paiements demandent encore la configuration des services ci-dessous.
 
 La première utilisation de Workers peut demander de choisir un sous-domaine de compte `workers.dev`. Si cette demande apparaît, choisir un nom disponible. Cela détermine une partie de l’adresse du site; cela ne crée pas une application de démonstration.
 
@@ -118,7 +118,7 @@ Pour les futures mises à jour du site, exécuter `npm run deploy` depuis le mê
 
 ## G. Choisir un domaine pour les courriels
 
-Le site peut déjà être visité avec son adresse `workers.dev`. Pour expédier les liens de connexion à tous les participants avec Resend, il faut aussi posséder un domaine vérifiable, par exemple un nom choisi par l’organisation. Aucun nom d’exemple n’est supposé disponible ou acheté.
+Le site peut déjà être visité avec son adresse `workers.dev`. Pour expédier les codes de connexion à tous les participants avec Resend, il faut aussi posséder un domaine vérifiable, par exemple un nom choisi par l’organisation. Aucun nom d’exemple n’est supposé disponible ou acheté.
 
 1. Choisir le domaine et vérifier son prix auprès d’un registraire, éventuellement Cloudflare Registrar.
 2. Décider de l’achat avant de le payer.
@@ -158,9 +158,9 @@ npx wrangler secret put RESEND_WEBHOOK_SECRET
 
 **Résultat attendu : le service possède un domaine vérifié, un expéditeur et un webhook.** Un message accepté n’est pas une preuve de livraison : vérifier les états du prestataire. Choisir une offre adaptée au nombre de connexions et de confirmations; le plafond gratuit quotidien peut être insuffisant lors d’une pointe. Aucun abonnement n’est activé automatiquement.
 
-Le domaine vérifié et le webhook ne suffisent pas à envoyer les liens de connexion. Les deux réglages `RESEND_API_KEY` et `MAIL_FROM` doivent aussi être présents dans **Cloudflare → Workers & Pages → ride-for-brains → Settings → Variables and Secrets**, dans l’environnement de production. La clé d’envoi Resend commence par `re_`; le secret de webhook `whsec_` est différent et ne la remplace pas. Ne pas coller ces clés dans le chat ou dans GitHub.
+Le domaine vérifié et le webhook ne suffisent pas à envoyer les codes de connexion. Les deux réglages `RESEND_API_KEY` et `MAIL_FROM` doivent aussi être présents dans **Cloudflare → Workers & Pages → ride-for-brains → Settings → Variables and Secrets**, dans l’environnement de production. La clé d’envoi Resend commence par `re_`; le secret de webhook `whsec_` est différent et ne la remplace pas. Ne pas coller ces clés dans le chat ou dans GitHub.
 
-Si la page de connexion affiche une erreur JSON ou indique que la connexion par courriel n’est pas activée, vérifier ces deux réglages. Après les avoir renseignés avec les commandes ci-dessus, recharger la page de connexion et demander un nouveau lien.
+Si la page de connexion affiche une erreur JSON ou indique que la connexion par courriel n’est pas activée, vérifier ces deux réglages. Après les avoir renseignés avec les commandes ci-dessus, recharger la page de connexion et demander un nouveau code.
 
 ## I. Configurer Turnstile, la protection des formulaires
 
@@ -185,8 +185,8 @@ npx wrangler secret put TURNSTILE_SECRET_KEY
 ## J. Créer le compte de Thomas et protéger l’administration
 
 1. Ouvrir https://rideforbrains.ca/connexion. Cette même page sert à créer le compte lors de la première visite, puis à se connecter lors des visites suivantes.
-2. Saisir le nom de Thomas et `thomasberu0104@hotmail.com`, puis demander le lien de connexion.
-3. Ouvrir le courriel reçu et cliquer sur le lien personnel dans les 10 minutes. Le premier lien vérifié crée automatiquement le compte : il n’y a pas de mot de passe à choisir. Si aucun message n’arrive, vérifier les indésirables et Resend avant de poursuivre.
+2. Saisir prénom, nom, courriel et mot de passe, puis demander le code à 6 chiffres.
+3. Saisir le code reçu sur la page de connexion dans les 10 minutes. Pour un compte existant sans mot de passe, choisir « Définir mon mot de passe ». Si aucun message n’arrive, vérifier les indésirables et Resend avant de poursuivre.
 4. Dans PowerShell :
 
 ```powershell
@@ -200,10 +200,10 @@ L’accès administrateur de production exige aussi Cloudflare Access :
 6. Dans **Zero Trust → Contrôles Access → Applications**, créer ou modifier une seule application **Auto-hébergée et privée**, nommée `Ride For Brains — Administration`.
 7. Ajouter les deux noms d’hôte publics ci-dessous dans cette même application. Garder le reste du site public, notamment les webhooks de paiement.
 
-| Domaine | Sous-domaine | Chemin |
-| --- | --- | --- |
-| `rideforbrains.ca` | Vide | `/admin` |
-| `rideforbrains.ca` | Vide | `/api/admin/*` |
+| Domaine            | Sous-domaine | Chemin         |
+| ------------------ | ------------ | -------------- |
+| `rideforbrains.ca` | Vide         | `/admin`       |
+| `rideforbrains.ca` | Vide         | `/api/admin/*` |
 
 8. Associer une politique `Accès Thomas` : action **Autoriser**, règle **Inclure → E-mails → thomasberu0104@hotmail.com**. Laisser les réglages MFA de cette politique hériter de l’application.
 9. Ajouter d’abord la méthode de connexion par courriel dans **Zero Trust → Intégrations → Fournisseurs d’identité / Identity providers → Ajouter un fournisseur d’identité → One-time PIN / Code à usage unique**. Les nouveaux comptes proposent seulement le fournisseur **Cloudflare** par défaut; le code par courriel n’est plus ajouté automatiquement. Revenir ensuite dans l’application, sous **Authentification → Identité**, et sélectionner **One-time PIN** pour recevoir le code d’identification par courriel.
@@ -219,8 +219,7 @@ Coller le domaine réel lorsque PowerShell le demande. Le domaine visible dans l
 
 13. Activer d’abord le portail dans **Contrôles Access → Paramètres Access → Gérer votre App Launcher / Manage your App Launcher → Gérer**. Dans **Policies / Stratégies**, associer la politique `Accès Thomas` si elle limite bien l’accès à `thomasberu0104@hotmail.com`, ou créer une règle **Autoriser → Inclure → E-mails → thomasberu0104@hotmail.com**. Dans **Authentication / Authentification**, sélectionner **One-time PIN**, puis enregistrer. Cette règle concerne l’accès au portail; elle ne remplace pas la protection des deux chemins d’administration.
 
-Ouvrir ensuite https://rapid-hat-4b57.cloudflareaccess.com pour accéder au portail Access. Se connecter avec `thomasberu0104@hotmail.com`, puis ouvrir **Account / Compte → MFA devices / Appareils MFA → Add an MFA device**. Choisir l’application d’authentification, scanner le QR avec Microsoft Authenticator ou Google Authenticator sur son téléphone et confirmer avec le code affiché. Garder le QR privé. Si le portail affiche « Please contact your administrator to enable the Access App Launcher », reprendre l’activation du portail décrite ci-dessus.
-14. Dans **Contrôles Access → Applications → cette application → Configurer → Paramètres supplémentaires / Additional settings**, copier **Application Audience (AUD) Tag**, puis lancer :
+Ouvrir ensuite https://rapid-hat-4b57.cloudflareaccess.com pour accéder au portail Access. Se connecter avec `thomasberu0104@hotmail.com`, puis ouvrir **Account / Compte → MFA devices / Appareils MFA → Add an MFA device**. Choisir l’application d’authentification, scanner le QR avec Microsoft Authenticator ou Google Authenticator sur son téléphone et confirmer avec le code affiché. Garder le QR privé. Si le portail affiche « Please contact your administrator to enable the Access App Launcher », reprendre l’activation du portail décrite ci-dessus. 14. Dans **Contrôles Access → Applications → cette application → Configurer → Paramètres supplémentaires / Additional settings**, copier **Application Audience (AUD) Tag**, puis lancer :
 
 ```powershell
 npx wrangler secret put ACCESS_AUD

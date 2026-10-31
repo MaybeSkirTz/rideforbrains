@@ -37,7 +37,7 @@ npm run check
 npm test
 ```
 
-TypeScript doit terminer sans erreur et les 79 tests doivent passer. Ces tests sont isolés et ne déclenchent pas de paiement ou de remboursement réel.
+TypeScript doit terminer sans erreur et les 88 tests doivent passer. Ces tests sont isolés et ne déclenchent pas de paiement ou de remboursement réel.
 
 ## 5. Remplacer la version du site
 

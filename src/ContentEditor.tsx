@@ -5,7 +5,7 @@ import { api } from './api';
 type Spec = {
   key: string;
   label: string;
-  type?: 'text' | 'textarea' | 'url' | 'select';
+  type?: 'text' | 'textarea' | 'url' | 'image' | 'select';
   options?: string[];
 };
 function Rows({
@@ -84,13 +84,27 @@ function Rows({
                 </select>
               ) : (
                 <input
-                  type={f.type || 'text'}
+                  type={f.type === 'image' ? 'text' : f.type || 'text'}
+                  inputMode={f.type === 'image' ? 'url' : undefined}
                   value={r[f.key] || ''}
                   onChange={(e) => update(i, f.key, e.target.value)}
                 />
               )}
             </Field>
           ))}
+          {fields
+            .filter(
+              (f) => f.type === 'image' && r[f.key] && /^(https:\/\/|\/media\/)/.test(r[f.key]),
+            )
+            .map((f) => (
+              <img
+                className="content-image-preview"
+                key={'preview-' + f.key}
+                src={r[f.key]}
+                alt="Aperçu de l’image sélectionnée"
+                loading="lazy"
+              />
+            ))}
           {'enabled' in blank && (
             <label className="checkbox">
               <input
@@ -153,7 +167,7 @@ export default function ContentEditor({
         change={(v) => change('photos', v)}
         blank={{ url: '', alt: '', caption: '', section: 'edition', enabled: true, order: 0 }}
         fields={[
-          { key: 'url', label: 'Adresse de l’image', type: 'url' },
+          { key: 'url', label: 'Adresse de l’image', type: 'image' },
           { key: 'alt', label: 'Description accessible' },
           { key: 'caption', label: 'Légende' },
           {
@@ -197,7 +211,7 @@ export default function ContentEditor({
         fields={[
           { key: 'name', label: 'Nom' },
           { key: 'url', label: 'Site officiel', type: 'url' },
-          { key: 'logo', label: 'Adresse du logo', type: 'url' },
+          { key: 'logo', label: 'Adresse du logo', type: 'image' },
           { key: 'category', label: 'Catégorie' },
           { key: 'level', label: 'Niveau' },
         ]}
@@ -249,7 +263,7 @@ export default function ContentEditor({
           { key: 'role', label: 'Rôle' },
           { key: 'story', label: 'Histoire personnelle', type: 'textarea' },
           { key: 'quote', label: 'Citation réelle', type: 'textarea' },
-          { key: 'photo', label: 'Portrait autorisé (adresse)', type: 'url' },
+          { key: 'photo', label: 'Portrait autorisé (adresse)', type: 'image' },
         ]}
       />
       <Rows

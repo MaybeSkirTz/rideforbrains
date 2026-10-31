@@ -2,7 +2,7 @@
 
 Application française de la deuxième édition : **21 août 2027**, accueil **7 h 30**, **18 ans et plus**, **15 $ CA par activité**, sans quota initial. Vélo 100 km, course 10 / 5 / 2 km et marche 5 km. Thomas est le contact principal. Le lieu et les horaires des départs restent à confirmer.
 
-Le code comprend une interface publique éditoriale, un système de scènes Three.js différées, les inscriptions individuelles ou groupées, une connexion par lien personnel Better Auth, un espace participant avec billet complet/QR et une administration. Workers sert l’application et ses métadonnées HTML; D1 stocke les dossiers. Stripe Checkout et Resend restent intégrés côté serveur.
+Le code comprend une interface publique éditoriale, un système de scènes Three.js différées, les inscriptions individuelles ou groupées, une connexion par mot de passe et code à 6 chiffres avec Better Auth, un espace participant avec billet complet/QR et une administration. Workers sert l’application et ses métadonnées HTML; D1 stocke les dossiers. Stripe Checkout et Resend restent intégrés côté serveur.
 
 **Statut : refonte du site existant sur la branche `codex/refonte-experience-2027`.** La production existe sur rideforbrains.ca; cette branche se vérifie dans une base locale isolée. Les paramètres et secrets de production sont conservés. Aucun paiement, remboursement ou courriel réel n’est déclenché par les tests. Lire la [livraison 2027 et sa configuration](docs/REFONTE-2027.md), les [audits](docs/AUDIT-2027.md) et les résultats des tests avant de promouvoir cette version.
 
@@ -27,7 +27,7 @@ Si l’antivirus intercepte TLS, configurer son certificat de confiance avec `NO
 
 ## Premier administrateur
 
-1. Se connecter une première fois avec son courriel via `/connexion`, puis utiliser son lien personnel.
+1. Créer son compte sur `/connexion` avec prénom, nom, courriel et mot de passe, puis saisir le code à 6 chiffres reçu. Pour un compte existant sans mot de passe, utiliser « Définir mon mot de passe ».
 2. Arrêter le serveur de développement avec `Ctrl+C`, puis exécuter **depuis le dossier du projet** :
 
 ```powershell

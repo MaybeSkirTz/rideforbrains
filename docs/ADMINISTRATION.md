@@ -2,7 +2,7 @@
 
 ## Accéder
 
-Se connecter par lien personnel sur `/connexion`, puis ouvrir `/admin`. Le compte doit être promu par la procédure du README ou par un administrateur principal. En production, passer aussi par Cloudflare Access configuré avec MFA. Le rôle est lu côté serveur pour chaque opération.
+Se connecter par mot de passe et code à 6 chiffres sur `/connexion`, puis ouvrir `/admin`. Pour un ancien compte, utiliser « Mot de passe oublié / Définir mon mot de passe ». Le compte doit être promu par la procédure du README ou par un administrateur principal. En production, passer aussi par Cloudflare Access configuré avec MFA. Le rôle est lu côté serveur pour chaque opération.
 
 | Rôle                     | Accès                                                                                                   |
 | ------------------------ | ------------------------------------------------------------------------------------------------------- |
@@ -37,7 +37,7 @@ Un administrateur autorisé peut demander un remboursement partiel ou total de l
 
 Modifier la date, l’accueil, le lieu, le contact, les horaires de vente, le tarif de chaque activité, les quotas, les parcours et leurs liens carte/GPX. Un quota vide signifie sans limite. Le serveur refuse une réduction sous le nombre de places actives.
 
-Les pages pratiques affichent « à confirmer » lorsqu’aucun lieu ou parcours n’est publié. Les champs GPX et carte n’inventent pas de tracé : fournir un lien HTTPS réel. Les fichiers sont hébergés séparément; aucun téléversement R2 n’est intégré à cette version.
+Les pages pratiques affichent « à confirmer » lorsqu’aucun lieu ou parcours n’est publié. Les champs GPX et carte n’inventent pas de tracé : fournir un lien HTTPS réel. Les tracés GPX sont hébergés séparément. Les photos peuvent être téléversées avec la liaison R2 MEDIA.
 
 Les textes de l’histoire, de la cause, des politiques et des FAQ se modifient sans toucher au code. FAQ, photos et partenaires utilisent des tableaux JSON dans l’interface avancée. Une erreur de JSON conserve la dernière version valide et s’affiche à l’écran. Publier uniquement les photos et logos dont l’utilisation est autorisée. La version des conditions doit changer dès que leur texte change; les anciennes inscriptions conservent leur texte original.
 

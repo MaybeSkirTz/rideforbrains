@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useApp } from './context';
 import { Page, Link, Button, Field, Notice, DynamicFields } from './ui';
-import { api, money, statuses, date } from './api';
+import { api, downloadPrivate, money, statuses, date } from './api';
 
 type Feedback = {
   error: string;
@@ -310,9 +310,17 @@ function Participants(
       <div className="admin-toolbar">
         <h2>Les participants</h2>
         {canExport && (
-          <a href="/api/admin/export" className="button">
+          <button
+            type="button"
+            className="button"
+            onClick={() =>
+              downloadPrivate('/admin/export', 'ride-for-brains-participants.csv').catch((e) =>
+                setError(e.message),
+              )
+            }
+          >
             Exporter CSV <Download size={15} />
-          </a>
+          </button>
         )}
       </div>
       <form onSubmit={filter} className="admin-filters">

@@ -25,9 +25,9 @@ test('MEDIA binding stores optimized WebP privately and exposes only the image r
   try {
     const db = await mf.getD1Database('DB');
     await migrate(db);
-    const request = (path, data, cookie = '') =>
+    const request = (path, data, cookie = '', method = data ? 'POST' : 'GET') =>
       mf.dispatchFetch(origin + '/api' + path, {
-        method: data ? 'POST' : 'GET',
+        method,
         headers: {
           Origin: origin,
           Cookie: cookie,
@@ -37,17 +37,23 @@ test('MEDIA binding stores optimized WebP privately and exposes only the image r
         redirect: 'manual',
       });
     assert.equal((await request('/admin/media/status')).status, 401);
-    await request('/auth/sign-in/magic-link', {
+    const started = await request('/auth/request/create', {
       email: 'media@example.test',
-      name: 'Fixture',
-      callbackURL: '/espace',
+      firstName: 'Media',
+      lastName: 'Fixture',
+      password: 'Media-test-password-2027!',
+      rememberMe: true,
     });
+    assert.equal(started.status, 200, await started.clone().text());
     const mail = await db
       .prepare("SELECT body FROM outbox WHERE kind='login' ORDER BY rowid DESC LIMIT 1")
       .first();
-    const verified = await mf.dispatchFetch(mail.body.match(/http:\/\/[^\s]+/)[0], {
-      redirect: 'manual',
+    const verified = await request('/auth/verify-code', {
+      challengeId: (await started.json()).challengeId,
+      code: mail.body.match(/code de vérification : (\d{6})/)[1],
+      password: 'Media-test-password-2027!',
     });
+    assert.equal(verified.status, 200, await verified.clone().text());
     const cookie = verified.headers
       .getSetCookie()
       .map((v) => v.split(';')[0])
@@ -71,6 +77,32 @@ test('MEDIA binding stores optimized WebP privately and exposes only the image r
     assert.equal(uploaded.status, 201, await uploaded.clone().text());
     const { url } = await uploaded.json();
     assert.match(url, /^\/media\/[a-f0-9-]+\.webp$/);
+    const config = await (await request('/admin/config', null, cookie)).json();
+    const saved = await request(
+      '/admin/settings',
+      {
+        settings: {
+          ...config.settings,
+          photos: [
+            {
+              url,
+              alt: 'Photo réelle de test',
+              caption: 'Légende de test',
+              section: 'edition',
+              enabled: true,
+              order: 0,
+            },
+          ],
+        },
+        revision: config.revision,
+      },
+      cookie,
+      'PUT',
+    );
+    assert.equal(saved.status, 200, await saved.clone().text());
+    const published = await (await request('/public')).json();
+    assert.equal(published.settings.photos[0].url, url);
+    assert.equal(published.settings.photos[0].caption, 'Légende de test');
     const image = await mf.dispatchFetch(origin + url);
     assert.equal(image.status, 200);
     assert.equal(image.headers.get('content-type'), 'image/webp');
