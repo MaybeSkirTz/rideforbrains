@@ -65,7 +65,7 @@ export async function publish({
   log('2/5 — Préparation des tables dans la base Cloudflare.');
   wrangler(['d1', 'migrations', 'apply', 'DB', '--remote']);
   log('3/5 — Envoi du vrai site à Cloudflare.');
-  const output = wrangler(['deploy']);
+  const output = wrangler(['deploy', '--keep-vars']);
   let url = config.vars.APP_URL;
   if (initialSetup) {
     url = workerUrl(output, config.name);
@@ -82,7 +82,7 @@ export async function publish({
     config.vars.APP_URL = url;
     writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
     log('4/5 — Configuration automatique de l’adresse du site.');
-    wrangler(['deploy']);
+    wrangler(['deploy', '--keep-vars']);
   } else {
     log('4/5 — Adresse déjà configurée, conservée.');
   }
@@ -97,7 +97,7 @@ export async function publish({
   }
   log('Adresse de publication : ' + url);
   log(
-    'Les courriels, l’accès administrateur et Stripe se configurent séparément. Aucun paiement réel n’est activé par cette commande.',
+    'Mise à jour terminée. Les secrets et variables déjà configurés pour Stripe, les courriels et la protection sont conservés. Le mode de paiement existant est maintenu.',
   );
   return url;
 }

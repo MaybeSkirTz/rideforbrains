@@ -71,6 +71,7 @@ test('Later publication preserves a configured domain and existing authenticatio
       },
     });
     assert.equal(calls.filter((c) => c[0] === 'deploy').length, 1);
+    assert.ok(calls.filter((c) => c[0] === 'deploy').every((c) => c.includes('--keep-vars')));
     assert.equal(
       JSON.parse(readFileSync(join(f.cwd, 'wrangler.json'), 'utf8')).vars.APP_URL,
       'https://event.example',

@@ -28,6 +28,8 @@ Branche `codex/refonte-experience-2027`, à partir du site existant (`40022a4`).
 
 Les secrets, l’identifiant D1, `APP_URL` et le mode Stripe existants sont conservés. La base locale d’audit est isolée (`work/refonte-preview-public/d1`) et ne contient pas de copie des participants de production. La configuration locale d’audit ne contient aucune clé Stripe ou Resend. Les réglages et activités publics actuels ont été repris par une lecture sans authentification du site existant; aucun compte ou dossier participant n’a été copié.
 
+La publication conserve également les variables ajoutées dans le tableau de bord Cloudflare grâce à `keep_vars: true` et au drapeau `--keep-vars`. Les variables déjà définies dans `wrangler.json` restent la référence pour `APP_ENV`, `APP_URL` et `PAYMENTS_MODE`. Les domaines continuent d’être gérés dans Cloudflare : aucune nouvelle route de domaine n’est imposée par ce fichier.
+
 ## Configuration encore nécessaire
 
 Une lecture publique du site existant le 30 octobre 2026 indique : production, cinq activités, inscriptions déjà ouvertes, lieu renseigné, fiscalité `not_applicable`, validations des conditions et marques cochées, services de paiement/courriel/protection déclarés présents. **Ces indicateurs de présence ne prouvent ni la conformité fiscale, ni la livraison d’un courriel, ni une transaction bancaire.** La refonte ne réinitialise pas ces réglages.
