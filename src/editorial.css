@@ -2254,3 +2254,50 @@ footer .footer-brand {
 .qr-scanner {
   padding: 15px 0;
 }
+
+.removal-section {
+  border-top: 1px solid #b75043;
+  padding-top: 25px;
+}
+.removal-button {
+  background: #873b31 !important;
+  color: #fff !important;
+}
+.removal-dialog {
+  max-width: 680px;
+  width: calc(100% - 32px);
+  max-height: 90vh;
+  overflow: auto;
+  padding: clamp(22px, 4vw, 40px);
+  border: 1px solid #c5cbbf;
+  background: var(--cream);
+  color: var(--ink);
+}
+.removal-dialog::backdrop {
+  background: rgba(10, 30, 26, 0.65);
+}
+.removal-dialog h2 {
+  font-size: clamp(26px, 4vw, 36px);
+  line-height: 1.2;
+}
+.removal-dialog ul {
+  padding-left: 20px;
+  margin: 22px 0;
+}
+.removal-dialog li {
+  margin: 10px 0;
+}
+.removal-amounts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 25px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.removal-amounts dd {
+  margin: 0;
+  white-space: nowrap;
+}
+.removal-dialog .actions {
+  margin-top: 25px;
+}

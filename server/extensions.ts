@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { uuid, now, parse, isLocal } from './types';
 import { processRefunds } from './payments';
 export function extensions(app: any, { actor, staffActor, settings, audit, fail, limited }: any) {
+  app.get('/api/admin/media/status', async (c: any) => {
+    await staffActor(c, 'event');
+    return c.json({ configured: !!c.env.MEDIA });
+  });
   app.post('/api/admin/media', async (c: any) => {
     const a = await staffActor(c, 'event');
     if (!c.env.MEDIA)
@@ -87,7 +91,7 @@ export function extensions(app: any, { actor, staffActor, settings, audit, fail,
       .strict()
       .parse(await c.req.json());
     const r = await c.env.DB.prepare(
-      'SELECT r.*,o.user_id,o.event_snapshot,o.payment_intent,o.status AS order_status,o.amount,o.refunded FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND o.user_id=?',
+      'SELECT r.*,o.user_id,o.event_snapshot,o.payment_intent,o.status AS order_status,o.amount,o.refunded FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND o.user_id=?',
     )
       .bind(c.req.param('id'), a.id)
       .first();
@@ -120,7 +124,7 @@ export function extensions(app: any, { actor, staffActor, settings, audit, fail,
     const statements = amount
       ? [
           c.env.DB.prepare(
-            "INSERT INTO refund_jobs(id,order_id,registration_id,amount,reason) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM registrations WHERE id=? AND status IN ('confirmed','partially_refunded'))",
+            "INSERT INTO refund_jobs(id,order_id,registration_id,amount,reason) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM visible_registrations WHERE id=? AND status IN ('confirmed','partially_refunded'))",
           ).bind(job, r.order_id, r.id, amount, 'Annulation individuelle à 15 jours ou plus', r.id),
           c.env.DB.prepare(
             "UPDATE registrations SET status='refunding' WHERE id=? AND EXISTS(SELECT 1 FROM refund_jobs WHERE id=?)",
@@ -153,14 +157,14 @@ export function extensions(app: any, { actor, staffActor, settings, audit, fail,
   app.get('/api/admin/analytics', async (c: any) => {
     await staffActor(c, 'participants');
     const queries = [
-      "SELECT date(created_at,'unixepoch') AS label,COUNT(*) AS orders,COALESCE(SUM(CASE WHEN payment_intent IS NOT NULL THEN amount-refunded ELSE 0 END),0) AS revenue FROM orders GROUP BY label ORDER BY label DESC LIMIT 60",
-      'SELECT a.name,a.distance,r.status,COUNT(*) AS count FROM registrations r JOIN activities a ON a.id=r.activity_id GROUP BY a.id,r.status',
-      'SELECT status,COUNT(*) AS count FROM orders GROUP BY status',
-      "SELECT event,SUM(count) AS count FROM funnel_daily WHERE day>=date('now','-60 days') GROUP BY event",
+      "SELECT date(created_at,'unixepoch') AS label,COUNT(*) AS orders,COALESCE(SUM(CASE WHEN payment_intent IS NOT NULL THEN amount-refunded ELSE 0 END),0) AS revenue FROM visible_orders GROUP BY label ORDER BY label DESC LIMIT 60",
+      'SELECT a.name,a.distance,r.status,COUNT(*) AS count FROM visible_registrations r JOIN activities a ON a.id=r.activity_id GROUP BY a.id,r.status',
+      'SELECT status,COUNT(*) AS count FROM visible_orders GROUP BY status',
+      "SELECT event,SUM(count) AS count FROM funnel_daily WHERE event!='payment_confirmed' AND day>=date('now','-60 days') GROUP BY event UNION ALL SELECT 'payment_confirmed',COUNT(*) FROM visible_orders WHERE payment_intent IS NOT NULL AND status IN ('confirmed','refunding','partially_refunded','refunded','cancelled') AND date(created_at,'unixepoch')>=date('now','-60 days')",
       "SELECT status,COUNT(*) AS count FROM outbox WHERE kind!='login' GROUP BY status",
-      'SELECT COUNT(*) AS present FROM registrations WHERE checked_at IS NOT NULL',
-      "SELECT p.code,COUNT(o.id) AS uses FROM promos p LEFT JOIN orders o ON o.promo=p.code AND o.status IN ('confirmed','refunding','partially_refunded','refunded') GROUP BY p.code",
-      "SELECT date(created_at,'unixepoch') AS label,COUNT(*) AS count FROM registrations WHERE status!='waitlisted' GROUP BY label ORDER BY label DESC LIMIT 60",
+      'SELECT COUNT(*) AS present FROM visible_registrations WHERE checked_at IS NOT NULL',
+      "SELECT p.code,COUNT(o.id) AS uses FROM promos p LEFT JOIN visible_orders o ON o.promo=p.code AND o.status IN ('confirmed','refunding','partially_refunded','refunded') GROUP BY p.code",
+      "SELECT date(created_at,'unixepoch') AS label,COUNT(*) AS count FROM visible_registrations WHERE status!='waitlisted' GROUP BY label ORDER BY label DESC LIMIT 60",
     ];
     const results = await Promise.all(queries.map((sql) => c.env.DB.prepare(sql).all()));
     return c.json(

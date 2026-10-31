@@ -42,7 +42,10 @@ test('Incremental platform migration preserves existing settings, paid registrat
     await migrate(db);
     await migrate(db);
     assert.deepEqual(await db.prepare('SELECT * FROM settings').first(), settings);
-    assert.deepEqual(await db.prepare('SELECT * FROM orders').first(), order);
+    const nextOrder = await db.prepare('SELECT * FROM orders').first();
+    for (const [key, value] of Object.entries(order)) assert.equal(nextOrder[key], value, key);
+    assert.equal(nextOrder.removed_at, null);
+    assert.equal(nextOrder.removed_by, null);
     const next = await db.prepare('SELECT * FROM registrations').first();
     for (const [key, value] of Object.entries(registration)) assert.equal(next[key], value, key);
     assert.equal(next.refunded_amount, 0);

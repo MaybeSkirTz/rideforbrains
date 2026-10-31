@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import type { Env } from './types';
 import { now, uuid, isLocal } from './types';
 import { mailStatement } from './mail';
+import { cad, confirmationMails, removalContacts } from './removal-notifications';
 
 export function stripe(env: Env) {
   if (!env.STRIPE_SECRET_KEY) throw new Error('Stripe non configuré');
@@ -49,6 +50,53 @@ export async function startCheckout(env: Env, order: any) {
     .bind(session.id, order.id)
     .run();
   return session.url;
+}
+
+async function reconcileRemovedPayment(
+  env: Env,
+  order: any,
+  pi: Stripe.PaymentIntent,
+  event: Stripe.Event,
+) {
+  const current = await env.DB.prepare('SELECT * FROM orders WHERE id=?')
+    .bind(order.id)
+    .first<any>();
+  if (current.payment_intent) {
+    if (current.payment_intent !== pi.id) throw Error('Paiement du retrait incompatible');
+    await env.DB.prepare('INSERT OR IGNORE INTO stripe_events(id,type) VALUES(?,?)')
+      .bind(event.id, event.type)
+      .run();
+    return;
+  }
+  const removal = await removalContacts(env, order.id);
+  if (!removal) throw Error('Retrait introuvable');
+  const amount = removal.refund_eligible ? Math.max(0, current.amount - current.refunded) : 0,
+    job = 'removal:' + order.id;
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE orders SET payment_intent=?,status=? WHERE id=? AND removed_at IS NOT NULL AND payment_intent IS NULL',
+    ).bind(pi.id, amount ? 'refunding' : 'cancelled', order.id),
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO refund_jobs(id,order_id,amount,reason) SELECT ?,o.id,o.amount-o.refunded,'Paiement tardif après retrait administratif' FROM orders o JOIN order_removals r ON r.order_id=o.id WHERE o.id=? AND r.refund_eligible=1 AND o.amount>o.refunded AND o.payment_intent=?",
+    ).bind(job, order.id, pi.id),
+    env.DB.prepare(
+      'UPDATE order_removals SET refund_amount=COALESCE((SELECT amount FROM refund_jobs WHERE id=?),refund_amount),checkout_closed=1 WHERE order_id=?',
+    ).bind(job, order.id),
+    env.DB.prepare('INSERT OR IGNORE INTO stripe_events(id,type) VALUES(?,?)').bind(
+      event.id,
+      event.type,
+    ),
+    ...confirmationMails(
+      env,
+      removal,
+      'Paiement reçu après retrait — Ride For Brains',
+      `Un paiement de ${cad(current.amount)} a été confirmé après le retrait de la commande ${order.id}. Aucun billet n’est réactivé. ${amount ? 'Un remboursement de ' + cad(amount) + ' est demandé selon la politique; il reste en traitement.' : 'Aucun nouveau remboursement n’est prévu selon la politique applicable au retrait.'}`,
+      'removed-late-payment:' + order.id,
+    ),
+    env.DB.prepare(
+      "INSERT INTO audit(id,actor,action,target) VALUES(?,'stripe','removed_order.payment_received',?)",
+    ).bind(uuid(), order.id),
+  ]);
 }
 
 // The event is signed, then the session is re-read from Stripe to reconcile its current state.
@@ -118,6 +166,10 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
         ]);
         return;
       }
+      if (order.removed_at) {
+        await reconcileRemovedPayment(env, order, pi, event);
+        return;
+      }
       if (
         ['confirmed', 'refunding', 'partially_refunded', 'refunded', 'paid_review'].includes(
           order.status,
@@ -135,7 +187,7 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
       ).results;
       const statements = [
         env.DB.prepare(
-          "UPDATE orders SET status='confirmed',payment_intent=? WHERE id=? AND status IN ('pending','failed','expired')",
+          "UPDATE orders SET status='confirmed',payment_intent=? WHERE id=? AND removed_at IS NULL AND status IN ('pending','failed','expired')",
         ).bind(pi.id, order.id),
         env.DB.prepare(
           "UPDATE registrations SET status='confirmed' WHERE order_id=? AND status IN ('pending','failed','expired')",
@@ -165,6 +217,13 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
       ];
       try {
         await env.DB.batch(statements);
+        const current = await env.DB.prepare('SELECT * FROM orders WHERE id=?')
+          .bind(order.id)
+          .first<any>();
+        if (current.removed_at) {
+          await reconcileRemovedPayment(env, current, pi, event);
+          return;
+        }
         await countEvent(env, 'payment_confirmed');
       } catch (e) {
         if (!/CAPACITY_EXCEEDED|PROMO_UNAVAILABLE/.test(String(e))) throw e;
@@ -321,6 +380,19 @@ export async function applyRefund(env: Env, refund: Stripe.Refund) {
         "UPDATE registrations SET status=? WHERE order_id=? AND status NOT IN ('cancelled','refunded')",
       ).bind(next, order.id),
     );
+  }
+  if (order.removed_at && status === 'succeeded') {
+    const contact = await removalContacts(env, order.id);
+    if (contact)
+      statements.push(
+        ...confirmationMails(
+          env,
+          contact,
+          'Remboursement confirmé — Ride For Brains',
+          `Stripe confirme un remboursement de ${cad(refund.amount)} sur la commande retirée ${order.id}. Total remboursé : ${cad(total)} sur ${cad(order.amount)} réellement payés après rabais. La disponibilité sur le compte bancaire dépend de l’établissement de paiement.`,
+          'removed-refund:' + refund.id,
+        ),
+      );
   }
   await env.DB.batch(statements);
 }

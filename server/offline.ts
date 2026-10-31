@@ -9,7 +9,7 @@ export function offlineRoutes(app: any, { staffActor, audit, fail }: any) {
       .parse(await c.req.json());
     const rows = (
       await c.env.DB.prepare(
-        "SELECT r.id,r.ticket,r.first_name,r.last_name,r.checked_at,a.name,a.distance FROM registrations r JOIN activities a ON a.id=r.activity_id WHERE r.status IN ('confirmed','partially_refunded') LIMIT 5001",
+        "SELECT r.id,r.ticket,r.first_name,r.last_name,r.checked_at,a.name,a.distance FROM visible_registrations r JOIN activities a ON a.id=r.activity_id WHERE r.status IN ('confirmed','partially_refunded') LIMIT 5001",
       ).all()
     ).results;
     if (rows.length > 5000)
@@ -71,10 +71,10 @@ export function offlineRoutes(app: any, { staffActor, audit, fail }: any) {
         fail(400, 'Heure de scan invalide');
       await c.env.DB.batch([
         c.env.DB.prepare(
-          "UPDATE registrations SET checked_at=? WHERE id=? AND checked_at IS NULL AND status IN ('confirmed','partially_refunded') AND NOT EXISTS(SELECT 1 FROM offline_checkins WHERE id=?)",
+          "UPDATE registrations SET checked_at=? WHERE id=? AND removed_at IS NULL AND checked_at IS NULL AND status IN ('confirmed','partially_refunded') AND NOT EXISTS(SELECT 1 FROM offline_checkins WHERE id=?)",
         ).bind(now(), event.registrationId, event.id),
         c.env.DB.prepare(
-          "INSERT OR IGNORE INTO offline_checkins(id,snapshot_id,registration_id,scanned_at,result) VALUES(?,?,?,?,CASE WHEN changes()=1 THEN 'accepted' WHEN EXISTS(SELECT 1 FROM registrations WHERE id=? AND status IN ('confirmed','partially_refunded') AND checked_at IS NOT NULL) THEN 'already_used' ELSE 'invalid' END)",
+          "INSERT OR IGNORE INTO offline_checkins(id,snapshot_id,registration_id,scanned_at,result) VALUES(?,?,?,?,CASE WHEN changes()=1 THEN 'accepted' WHEN EXISTS(SELECT 1 FROM visible_registrations WHERE id=? AND status IN ('confirmed','partially_refunded') AND checked_at IS NOT NULL) THEN 'already_used' ELSE 'invalid' END)",
         ).bind(event.id, snapshot.id, event.registrationId, event.scannedAt, event.registrationId),
         c.env.DB.prepare(
           "INSERT OR IGNORE INTO audit(id,actor,action,target,detail) SELECT ?,?,'offline.checkin_synced',registration_id,json_object('result',result,'snapshot',snapshot_id) FROM offline_checkins WHERE id=? AND snapshot_id=?",

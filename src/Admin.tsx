@@ -1,3 +1,4 @@
+import OrderRemoval, { RemovedOrders } from './OrderRemoval';
 import RouteEditor from './RouteEditor';
 import OfflineCheckin from './OfflineCheckin';
 import AdminInsights from './AdminInsights';
@@ -64,7 +65,7 @@ export default function Admin() {
     );
   const has = (permission: string) =>
     user.role === 'admin' ||
-    user.permissions.includes(permission) ||
+    (permission !== 'admin_only' && user.permissions.includes(permission)) ||
     (user.role === 'checkin' && permission === 'checkin');
   const tabs = [
     ['overview', 'Vue d’ensemble', LayoutDashboard, 'participants'],
@@ -76,6 +77,7 @@ export default function Admin() {
     ['submissions', 'Demandes reçues', Inbox, 'submissions'],
     ['staff', 'Équipe et accès', ShieldCheck, 'staff'],
     ['audit', 'Journal d’audit', ScrollText, 'staff'],
+    ['removed', 'Retraits privés', Trash2, 'admin_only'],
   ] as const;
   const active =
     tabs.find((t) => t[0] === tab && has(t[3]))?.[0] || tabs.find((t) => has(t[3]))?.[0];
@@ -131,6 +133,7 @@ export default function Admin() {
               canExport={has('export')}
               canRefund={has('refunds')}
               canMail={has('communications')}
+              canRemove={user.role === 'admin'}
             />
           ) : active === 'settings' ? (
             <Settings {...feedback} />
@@ -144,6 +147,8 @@ export default function Admin() {
             <Submissions {...feedback} />
           ) : active === 'staff' ? (
             <Staff {...feedback} />
+          ) : active === 'removed' ? (
+            <RemovedOrders />
           ) : active === 'audit' ? (
             <Audit {...feedback} />
           ) : (
@@ -253,11 +258,21 @@ function Participants(
     canExport: boolean;
     canRefund: boolean;
     canMail: boolean;
+    canRemove: boolean;
   },
 ) {
-  const { setError, setMessage, selected, setSelected, compose, canExport, canRefund, canMail } =
-    props;
-  const { data } = useApp();
+  const {
+    setError,
+    setMessage,
+    selected,
+    setSelected,
+    compose,
+    canExport,
+    canRefund,
+    canMail,
+    canRemove,
+  } = props;
+  const { data, refresh } = useApp();
   const [q, setQ] = useState(''),
     [status, setStatus] = useState(''),
     [activity, setActivity] = useState(''),
@@ -543,6 +558,18 @@ function Participants(
                 Renvoyer la confirmation
               </button>
             </div>
+          )}
+          {canRemove && (
+            <OrderRemoval
+              orderId={detail.order_id}
+              onRemoved={async (result) => {
+                setDetail(null);
+                setSelected(selected.filter((id) => !result.registrationIds?.includes(id)));
+                setMessage(result.message || 'Commande déjà retirée.');
+                await load();
+                await refresh();
+              }}
+            />
           )}
           {canRefund && detail.order.payment_intent && (
             <form

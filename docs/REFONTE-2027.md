@@ -62,7 +62,7 @@ Avant une publication : exporter D1 vers un emplacement privé, vérifier la bra
 
 Après validation de la prévisualisation : `npm run deploy` applique la migration incrémentale et publie le Worker existant. Cette commande ne doit être lancée que sur le compte de production attendu. Elle n’est pas un test de paiement. Vérifier ensuite les pages publiques, les en-têtes privés, la connexion, l’administration via Access, les journaux et les webhooks de l’environnement prévu. Ne pas modifier l’état des inscriptions réelles pour un essai.
 
-Si R2 est souhaité, créer explicitement le stockage choisi et ajouter à Wrangler `r2_buckets` avec `binding: "MEDIA"` et son `bucket_name`. C’est facultatif; cette étape peut avoir un coût et n’a pas été exécutée.
+R2 a été activé par Thomas. Le compartiment privé `ride-for-brains-media` a été créé et ajouté à Wrangler sous la liaison `MEDIA`. Le Worker déjà publié doit aussi recevoir cette liaison dans Cloudflare, ou lors de la prochaine publication. Le compartiment n’a pas à être rendu public; les images sont servies par `/media/`.
 
 ## Checklist avant de promouvoir la nouvelle version
 

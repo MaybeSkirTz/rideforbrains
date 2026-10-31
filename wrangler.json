@@ -69,5 +69,11 @@
       "enabled": true,
       "invocation_logs": false
     }
-  }
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "ride-for-brains-media"
+    }
+  ]
 }

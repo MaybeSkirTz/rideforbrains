@@ -48,6 +48,7 @@ beforeEach(async () => {
   await db.batch(
     [
       'offline_checkins',
+      'order_removals',
       'offline_snapshots',
       'registration_transfers',
       'guest_drafts',
@@ -219,6 +220,286 @@ function mockSession(session) {
     .reply(200, session);
 }
 
+async function removalPreview(id, cookie) {
+  const r = await request('/admin/orders/' + id + '/removal-preview', null, cookie);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  return r.data;
+}
+async function removeOrder(id, cookie, amount) {
+  return request(
+    '/admin/orders/' + id + '/remove',
+    {
+      confirm: true,
+      expectedRefund: amount,
+      reason: 'Demande de retrait administratif',
+    },
+    cookie,
+  );
+}
+async function payOrder(cookie, o) {
+  const ss = await checkoutFixture(cookie, o.id);
+  const amount = (await db.prepare('SELECT amount FROM orders WHERE id=?').bind(o.id).first())
+    .amount;
+  mockSession(sessionFixture(o.id, ss, amount));
+  const paid = await signedEvent({
+    id: 'evt_' + randomUUID(),
+    type: 'checkout.session.completed',
+    data: { object: { id: ss } },
+  });
+  assert.equal(paid.status, 200, JSON.stringify(paid.data));
+  return ss;
+}
+function mockRemovalRefund(id, amount, status = 'pending') {
+  const refund = {
+    id: 're_' + randomUUID(),
+    payment_intent: 'pi_' + id,
+    amount,
+    status,
+    metadata: { job_id: 'removal:' + id },
+  };
+  mock
+    .get('https://api.stripe.com')
+    .intercept({
+      path: '/v1/refunds',
+      method: 'POST',
+      headers: { 'idempotency-key': 'refund:removal:' + id },
+    })
+    .reply(200, refund);
+  return refund;
+}
+test('Whole-order removal refunds the discounted payment, hides every ticket and retains a private receipt', async () => {
+  const buyer = await login(),
+    admin = await login('admin@example.test', 'admin');
+  await db.prepare("INSERT INTO promos(code,percent,max_uses,active) VALUES('NET25',25,1,1)").run();
+  const o = await create(
+    buyer.cookie,
+    order([participant(), participant('course-10'), participant('marche-5')], { promo: 'NET25' }),
+  );
+  await payOrder(buyer.cookie, o);
+  const regs = (await db.prepare('SELECT * FROM registrations WHERE order_id=?').bind(o.id).all())
+    .results;
+  assert.equal((await removalPreview(o.id, admin.cookie)).refundRequested, 3375);
+  assert.equal((await removeOrder(o.id, admin.cookie, 4500)).status, 409);
+  assert.equal(
+    (await db.prepare('SELECT removed_at FROM orders WHERE id=?').bind(o.id).first()).removed_at,
+    null,
+  );
+  const refund = mockRemovalRefund(o.id, 3375);
+  const removed = await removeOrder(o.id, admin.cookie, 3375);
+  assert.equal(removed.status, 200, JSON.stringify(removed.data));
+  assert.equal(removed.data.refundRequested, 3375);
+  assert.equal(
+    (await db.prepare('SELECT amount FROM refund_jobs WHERE order_id=?').bind(o.id).first()).amount,
+    3375,
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM visible_orders').first()).n, 0);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM visible_registrations').first()).n, 0);
+  assert.ok(
+    (await db.prepare('SELECT removed_at FROM orders WHERE id=?').bind(o.id).first()).removed_at,
+  );
+  assert.equal((await request('/admin/participants', null, admin.cookie)).data.total, 0);
+  assert.equal((await request('/registrations', null, buyer.cookie)).data.registrations.length, 0);
+  const overview = (await request('/admin/overview', null, admin.cookie)).data;
+  assert.equal(overview.money.received, 0);
+  assert.ok(overview.stats.every((r) => r.count === 0));
+  const analytics = (await request('/admin/analytics', null, admin.cookie)).data;
+  assert.equal(analytics.daily.length, 0);
+  assert.equal(analytics.activities.length, 0);
+  assert.equal(analytics.orders.length, 0);
+  assert.equal(analytics.funnel.find((r) => r.event === 'payment_confirmed').count, 0);
+  assert.equal(analytics.promos.find((r) => r.code === 'NET25').uses, 0);
+  assert.equal(
+    (await request('/admin/checkin/search?q=Camille', null, admin.cookie)).data.length,
+    0,
+  );
+  assert.equal(
+    (await request('/admin/offline/snapshot', { confirm: true }, admin.cookie)).data.tickets.length,
+    0,
+  );
+  for (const r of regs) {
+    assert.equal(
+      (await request('/registrations/' + r.id + '/ticket', null, buyer.cookie)).status,
+      404,
+    );
+    assert.equal((await request('/admin/participants/' + r.id, null, admin.cookie)).status, 404);
+    assert.equal((await request('/admin/checkin', { ticket: r.ticket }, admin.cookie)).status, 409);
+  }
+  const csv = await request('/admin/export', null, admin.cookie);
+  assert.ok(regs.every((r) => !csv.data.includes(r.id)));
+  const receiptResult = await request('/admin/removed-orders', null, admin.cookie);
+  assert.equal(receiptResult.status, 200, JSON.stringify(receiptResult.data));
+  const receipts = receiptResult.data;
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].participants, 3);
+  assert.equal(receipts[0].refund_amount, 3375);
+  const emails = (
+    await db.prepare("SELECT recipient,body FROM outbox WHERE dedupe LIKE 'order-removed:%'").all()
+  ).results;
+  assert.deepEqual(emails.map((e) => e.recipient).sort(), [
+    'admin@example.test',
+    'payer@example.test',
+  ]);
+  assert.ok(
+    emails.every((e) => e.body.includes('33,75') && e.body.includes('reste en traitement')),
+  );
+  assert.equal((await removeOrder(o.id, admin.cookie, 3375)).data.alreadyRemoved, true);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM refund_jobs').first()).n, 1);
+  assert.equal(
+    (await db.prepare("SELECT COUNT(*) n FROM outbox WHERE dedupe LIKE 'order-removed:%'").first())
+      .n,
+    2,
+  );
+  await create(buyer.cookie, order([participant()], { promo: 'NET25' })); // quota released
+  mock
+    .get('https://api.stripe.com')
+    .intercept({ path: '/v1/refunds/' + refund.id, method: 'GET' })
+    .reply(200, { ...refund, status: 'succeeded' });
+  const evt = {
+    id: 'evt_removed_refunded',
+    type: 'refund.updated',
+    data: { object: { id: refund.id } },
+  };
+  assert.equal((await signedEvent(evt)).status, 200);
+  assert.equal((await signedEvent(evt)).status, 200);
+  assert.equal(
+    (await db.prepare("SELECT COUNT(*) n FROM outbox WHERE dedupe LIKE 'removed-refund:%'").first())
+      .n,
+    2,
+  );
+  assert.equal(
+    (await db.prepare('SELECT refunded FROM orders WHERE id=?').bind(o.id).first()).refunded,
+    3375,
+  );
+  // A late duplicate payment webhook must never restore cancelled tickets or refund twice.
+  const state = await db.prepare('SELECT stripe_session FROM orders WHERE id=?').bind(o.id).first();
+  mockSession(sessionFixture(o.id, state.stripe_session, 3375));
+  assert.equal(
+    (
+      await signedEvent({
+        id: 'evt_removed_paid_again',
+        type: 'checkout.session.completed',
+        data: { object: { id: state.stripe_session } },
+      })
+    ).status,
+    200,
+  );
+  assert.ok(
+    (
+      await db.prepare('SELECT status FROM registrations WHERE order_id=?').bind(o.id).all()
+    ).results.every((r) => ['cancelled', 'refunded'].includes(r.status)),
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM refund_jobs').first()).n, 1);
+});
+test('Removal is admin-only and requires an explicit confirmation', async () => {
+  const buyer = await login(),
+    staff = await login('organizer@example.test', 'organizer', ['participants', 'refunds']),
+    admin = await login('admin@example.test', 'admin');
+  const o = await create(buyer.cookie);
+  assert.equal((await removeOrder(o.id, buyer.cookie, 0)).status, 403);
+  assert.equal((await removeOrder(o.id, staff.cookie, 0)).status, 403);
+  assert.equal((await request('/admin/removed-orders', null, staff.cookie)).status, 403);
+  assert.equal(
+    (
+      await request(
+        '/admin/orders/' + o.id + '/remove',
+        { expectedRefund: 0, reason: 'Test' },
+        admin.cookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM order_removals').first()).n, 0);
+});
+test('Removal respects the frozen refund deadline and never refunds a free promo order', async () => {
+  const buyer = await login(),
+    admin = await login('admin@example.test', 'admin');
+  const s = JSON.parse(initialSettings);
+  s.eventAt = new Date(Date.now() + 14 * 86400000).toISOString();
+  await db.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+  const o = await create(buyer.cookie);
+  await payOrder(buyer.cookie, o);
+  assert.equal((await removalPreview(o.id, admin.cookie)).refundRequested, 0);
+  assert.equal((await removeOrder(o.id, admin.cookie, 0)).status, 200);
+  await db.prepare("INSERT INTO promos(code,percent,active) VALUES('FREE',100,1)").run();
+  const free = await create(buyer.cookie, order([participant()], { promo: 'FREE' }));
+  await db.prepare('UPDATE activities SET price=9000').run();
+  assert.equal((await removalPreview(free.id, admin.cookie)).paid, 0);
+  assert.equal((await removeOrder(free.id, admin.cookie, 0)).status, 200);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM refund_jobs').first()).n, 0);
+});
+test('Removal refunds only the remaining amount and blocks unsettled refunds', async () => {
+  const buyer = await login(),
+    admin = await login('admin@example.test', 'admin');
+  const o = await create(buyer.cookie);
+  await payOrder(buyer.cookie, o);
+  await db
+    .prepare(
+      "INSERT INTO refund_jobs(id,order_id,amount,reason,status,provider_id) VALUES('previous',?,500,'Fixture','succeeded','re_previous')",
+    )
+    .bind(o.id)
+    .run();
+  await db
+    .prepare("UPDATE orders SET refunded=500,status='partially_refunded' WHERE id=?")
+    .bind(o.id)
+    .run();
+  assert.equal((await removalPreview(o.id, admin.cookie)).refundRequested, 1000);
+  await db
+    .prepare(
+      "INSERT INTO refund_jobs(id,order_id,amount,reason,status) VALUES('pending',?,1000,'Fixture','review')",
+    )
+    .bind(o.id)
+    .run();
+  assert.equal((await removeOrder(o.id, admin.cookie, 1000)).status, 409);
+  await db.prepare("DELETE FROM refund_jobs WHERE id='pending'").run();
+  mockRemovalRefund(o.id, 1000);
+  assert.equal((await removeOrder(o.id, admin.cookie, 1000)).status, 200);
+  assert.equal(
+    (
+      await db
+        .prepare('SELECT amount FROM refund_jobs WHERE id=?')
+        .bind('removal:' + o.id)
+        .first()
+    ).amount,
+    1000,
+  );
+});
+test('A paid webhook after removal of an unpaid checkout refunds net once without issuing tickets', async () => {
+  const buyer = await login(),
+    admin = await login('admin@example.test', 'admin');
+  await db.prepare("INSERT INTO promos(code,percent,active) VALUES('HALF',50,1)").run();
+  const o = await create(buyer.cookie, order([participant()], { promo: 'HALF' }));
+  const ss = await checkoutFixture(buyer.cookie, o.id);
+  mockSession(sessionFixture(o.id, ss, 750)); // checkout cleanup discovers it just completed
+  assert.equal((await removeOrder(o.id, admin.cookie, 0)).status, 200);
+  mockRemovalRefund(o.id, 750);
+  mockSession(sessionFixture(o.id, ss, 750));
+  const evt = {
+    id: 'evt_late_removed',
+    type: 'checkout.session.completed',
+    data: { object: { id: ss } },
+  };
+  assert.equal((await signedEvent(evt)).status, 200);
+  assert.equal((await signedEvent(evt)).status, 200);
+  const state = await db
+    .prepare('SELECT removed_at,payment_intent FROM orders WHERE id=?')
+    .bind(o.id)
+    .first();
+  assert.ok(state.removed_at);
+  assert.equal(state.payment_intent, 'pi_' + o.id);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM visible_registrations').first()).n, 0);
+  assert.equal(
+    (await db.prepare('SELECT amount FROM refund_jobs WHERE order_id=?').bind(o.id).first()).amount,
+    750,
+  );
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT COUNT(*) n FROM outbox WHERE dedupe LIKE 'removed-late-payment:%'")
+        .first()
+    ).n,
+    2,
+  );
+});
 test('Public configuration contains exactly the supplied activities and no invented place', async () => {
   const r = await request('/public');
   assert.equal(r.status, 200);

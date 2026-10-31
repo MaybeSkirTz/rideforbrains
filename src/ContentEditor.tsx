@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Field, Button, Notice } from './ui';
 import { editorial } from '../shared/editorial';
 import { api } from './api';
@@ -268,7 +268,16 @@ export default function ContentEditor({
 }
 function MediaUpload({ onUploaded }: { onUploaded: (url: string) => void }) {
   const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [configured, setConfigured] = useState<boolean | null>(null);
+  const checkStorage = () => {
+    setError('');
+    setConfigured(null);
+    api('/admin/media/status')
+      .then((result) => setConfigured(result.configured === true))
+      .catch((e) => setError((e as Error).message));
+  };
+  useEffect(checkStorage, []);
   const upload = async (file?: File) => {
     if (!file) return;
     setBusy(true);
@@ -309,15 +318,27 @@ function MediaUpload({ onUploaded }: { onUploaded: (url: string) => void }) {
     <div className="media-upload">
       <Field
         label="Téléverser une photo"
-        hint="Stockage R2 facultatif. La photo est redimensionnée et convertie en WebP avant envoi."
+        hint="La photo est redimensionnée et convertie en WebP avant envoi."
       >
         <input
           type="file"
           accept="image/jpeg,image/png,image/webp,image/avif"
-          disabled={busy}
+          disabled={busy || configured !== true}
           onChange={(e) => upload(e.target.files?.[0])}
         />
       </Field>
+      {configured === null && !error && <p role="status">Vérification du stockage…</p>}
+      {configured === false && (
+        <Notice error>
+          Reliez le compartiment R2 à ce Worker dans Cloudflare : Liaisons → Ajouter → R2, nom de
+          variable MEDIA. Vous pouvez aussi utiliser une adresse HTTPS dans le champ de la photo.
+        </Notice>
+      )}
+      {configured !== true && (
+        <Button type="button" onClick={checkStorage}>
+          Revérifier le stockage
+        </Button>
+      )}
       {busy && <p role="status">Optimisation et envoi…</p>}
       {error && <Notice error>{error}</Notice>}
     </div>

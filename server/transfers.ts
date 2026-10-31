@@ -22,7 +22,7 @@ export function transferRoutes(app: any, { actor, settings, audit, fail, limited
       .parse(await c.req.json());
     if (x.recipient === a.email) fail(400, 'Indiquez le courriel du nouveau participant.');
     const r = await c.env.DB.prepare(
-      "SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=? AND r.status='confirmed' AND r.checked_at IS NULL",
+      "SELECT r.* FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=? AND r.status='confirmed' AND r.checked_at IS NULL",
     )
       .bind(c.req.param('id'), a.id)
       .first();
@@ -51,7 +51,7 @@ export function transferRoutes(app: any, { actor, settings, audit, fail, limited
     const a = await actor(c);
     await policy(c);
     const t = await c.env.DB.prepare(
-      "SELECT t.id,t.registration_id,t.recipient,t.status,t.expires_at,r.activity_id,r.form_snapshot,r.form_version FROM registration_transfers t JOIN registrations r ON r.id=t.registration_id WHERE t.token_hash=? AND t.recipient=? AND t.status='pending' AND t.expires_at>unixepoch()",
+      "SELECT t.id,t.registration_id,t.recipient,t.status,t.expires_at,r.activity_id,r.form_snapshot,r.form_version FROM registration_transfers t JOIN visible_registrations r ON r.id=t.registration_id WHERE t.token_hash=? AND t.recipient=? AND t.status='pending' AND t.expires_at>unixepoch()",
     )
       .bind(await digest(c.req.param('token')), a.email)
       .first();
@@ -74,7 +74,7 @@ export function transferRoutes(app: any, { actor, settings, audit, fail, limited
     if (x.termsVersion !== s.termsVersion || x.participant.email !== a.email)
       fail(409, 'Vérifiez votre courriel et acceptez la version actuelle des conditions.');
     const t = await c.env.DB.prepare(
-      "SELECT t.*,r.form_snapshot,r.form_version,r.activity_id FROM registration_transfers t JOIN registrations r ON r.id=t.registration_id WHERE t.token_hash=? AND t.recipient=? AND t.status='pending' AND t.expires_at>unixepoch() AND r.status='confirmed' AND r.checked_at IS NULL",
+      "SELECT t.*,r.form_snapshot,r.form_version,r.activity_id FROM registration_transfers t JOIN visible_registrations r ON r.id=t.registration_id WHERE t.token_hash=? AND t.recipient=? AND t.status='pending' AND t.expires_at>unixepoch() AND r.status='confirmed' AND r.checked_at IS NULL",
     )
       .bind(await digest(c.req.param('token')), a.email)
       .first();

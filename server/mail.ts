@@ -83,6 +83,19 @@ export async function processMail(env: Env) {
       continue;
     }
     try {
+      if (
+        row.registration_id &&
+        !(await env.DB.prepare('SELECT id FROM visible_registrations WHERE id=?')
+          .bind(row.registration_id)
+          .first())
+      ) {
+        await env.DB.prepare(
+          "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Commande retirée' WHERE id=?",
+        )
+          .bind(row.id)
+          .run();
+        continue;
+      }
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {

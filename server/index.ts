@@ -1,3 +1,4 @@
+import { orderRemovalRoutes, closeRemovedCheckouts } from './order-removals';
 import { bodyLimit } from 'hono/body-limit';
 import { transferRoutes } from './transfers';
 import { offlineRoutes } from './offline';
@@ -177,7 +178,7 @@ app.onError((e, c) => {
 app.get('/api/public', async (c) => {
   const s = await settings(c.env);
   const rows = await c.env.DB.prepare(
-    "SELECT a.*, f.fields, (SELECT COUNT(*) FROM registrations r WHERE r.activity_id=a.id AND (r.status IN ('confirmed','partially_refunded','refunding') OR (r.status='pending' AND r.expires_at>unixepoch()))) AS occupied FROM activities a JOIN forms f ON f.activity_id=a.id AND f.version=a.form_version WHERE a.enabled=1",
+    "SELECT a.*, f.fields, (SELECT COUNT(*) FROM visible_registrations r WHERE r.activity_id=a.id AND (r.status IN ('confirmed','partially_refunded','refunding') OR (r.status='pending' AND r.expires_at>unixepoch()))) AS occupied FROM activities a JOIN forms f ON f.activity_id=a.id AND f.version=a.form_version WHERE a.enabled=1",
   ).all<any>();
   return c.json({
     settings: {
@@ -300,7 +301,7 @@ app.post('/api/quote', async (c) => {
   let percent = 0;
   if (x.promo) {
     const p = await c.env.DB.prepare(
-      "SELECT *, (SELECT COUNT(*) FROM orders WHERE promo=promos.code AND (status IN ('confirmed','paid_review','refunding','partially_refunded','refunded') OR (status='pending' AND expires_at>unixepoch()))) AS uses FROM promos WHERE code=? AND active=1 AND (expires_at IS NULL OR expires_at>unixepoch())",
+      "SELECT *, (SELECT COUNT(*) FROM visible_orders WHERE promo=promos.code AND (status IN ('confirmed','paid_review','refunding','partially_refunded','refunded') OR (status='pending' AND expires_at>unixepoch()))) AS uses FROM promos WHERE code=? AND active=1 AND (expires_at IS NULL OR expires_at>unixepoch())",
     )
       .bind(x.promo.toUpperCase())
       .first<any>();
@@ -444,7 +445,7 @@ app.post('/api/orders', async (c) => {
   await limited(c.env, 'order:' + a.id, 10, 600);
   const input = orderSchema.parse(await c.req.json());
   const existing = await c.env.DB.prepare(
-    'SELECT id,status,amount FROM orders WHERE user_id=? AND request_key=?',
+    'SELECT id,status,amount FROM visible_orders WHERE user_id=? AND request_key=?',
   )
     .bind(a.id, input.requestKey)
     .first<any>();
@@ -588,7 +589,7 @@ app.post('/api/orders', async (c) => {
 });
 app.post('/api/orders/:id/checkout', async (c) => {
   const a = await actor(c);
-  const order = await c.env.DB.prepare('SELECT * FROM orders WHERE id=? AND user_id=?')
+  const order = await c.env.DB.prepare('SELECT * FROM visible_orders WHERE id=? AND user_id=?')
     .bind(c.req.param('id'), a.id)
     .first<any>();
   if (!order) fail(404, 'Dossier introuvable');
@@ -610,7 +611,7 @@ app.get('/api/registrations', async (c) => {
   const a = await actor(c);
   const rows = (
     await c.env.DB.prepare(
-      'SELECT r.*,a.name AS activity_name,a.distance,a.sport,o.amount AS order_amount,o.refunded,o.status AS order_status FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE COALESCE(r.transferred_user_id,o.user_id)=? ORDER BY r.created_at DESC',
+      'SELECT r.*,a.name AS activity_name,a.distance,a.sport,o.amount AS order_amount,o.refunded,o.status AS order_status FROM visible_registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE COALESCE(r.transferred_user_id,o.user_id)=? ORDER BY r.created_at DESC',
     )
       .bind(a.id)
       .all<any>()
@@ -625,7 +626,7 @@ app.get('/api/registrations', async (c) => {
     })),
     messages: (
       await c.env.DB.prepare(
-        "SELECT subject,body,created_at FROM outbox WHERE user_id=? AND kind!='login' AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 40",
+        "SELECT subject,body,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND user_id=? AND kind!='login' AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 40",
       )
         .bind(a.id)
         .all()
@@ -636,7 +637,7 @@ app.patch('/api/registrations/:id', async (c) => {
   const a = await actor(c);
   const s = await settings(c.env);
   const r = await c.env.DB.prepare(
-    'SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=?',
+    'SELECT r.* FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=?',
   )
     .bind(c.req.param('id'), a.id)
     .first<any>();
@@ -667,7 +668,7 @@ app.patch('/api/registrations/:id', async (c) => {
 app.get('/api/registrations/:id/ticket', async (c) => {
   const a = await actor(c);
   const r = await c.env.DB.prepare(
-    "SELECT r.id,r.ticket,r.first_name,r.last_name,r.activity_snapshot,o.event_snapshot,a.name,a.distance FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=? AND r.status IN ('confirmed','partially_refunded')",
+    "SELECT r.id,r.ticket,r.first_name,r.last_name,r.activity_snapshot,o.event_snapshot,a.name,a.distance FROM visible_registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE r.id=? AND COALESCE(r.transferred_user_id,o.user_id)=? AND r.status IN ('confirmed','partially_refunded')",
   )
     .bind(c.req.param('id'), a.id)
     .first<any>();
@@ -677,7 +678,7 @@ app.get('/api/registrations/:id/ticket', async (c) => {
 app.post('/api/orders/:id/cancel', async (c) => {
   const a = await actor(c);
   const s = await settings(c.env);
-  const o = await c.env.DB.prepare('SELECT * FROM orders WHERE id=? AND user_id=?')
+  const o = await c.env.DB.prepare('SELECT * FROM visible_orders WHERE id=? AND user_id=?')
     .bind(c.req.param('id'), a.id)
     .first<any>();
   if (!o) fail(404, 'Dossier introuvable');
@@ -734,7 +735,7 @@ app.post('/api/waitlist', async (c) => {
     .first<any>();
   if (!activity) fail(404, 'Activité introuvable');
   const occupied = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM registrations WHERE activity_id=? AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))",
+    "SELECT COUNT(*) AS n FROM visible_registrations WHERE activity_id=? AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))",
   )
     .bind(activity.id)
     .first<any>();
@@ -788,14 +789,14 @@ app.post('/api/submissions', async (c) => {
 app.get('/api/admin/overview', async (c) => {
   await staffActor(c, 'participants');
   const stats = await c.env.DB.prepare(
-    'SELECT a.id,a.name,a.distance,a.capacity,r.status,COUNT(r.id) AS count,SUM(CASE WHEN r.checked_at IS NOT NULL THEN 1 ELSE 0 END) AS present FROM activities a LEFT JOIN registrations r ON r.activity_id=a.id GROUP BY a.id,r.status',
+    'SELECT a.id,a.name,a.distance,a.capacity,r.status,COUNT(r.id) AS count,SUM(CASE WHEN r.checked_at IS NOT NULL THEN 1 ELSE 0 END) AS present FROM activities a LEFT JOIN visible_registrations r ON r.activity_id=a.id GROUP BY a.id,r.status',
   ).all();
   const money = await c.env.DB.prepare(
-    "SELECT COALESCE(SUM(CASE WHEN status IN ('confirmed','paid_review','refunding','partially_refunded','refunded','cancelled') AND payment_intent IS NOT NULL THEN amount ELSE 0 END),0) AS received,COALESCE(SUM(refunded),0) AS refunded,COALESCE(SUM(CASE WHEN status='pending' AND expires_at>unixepoch() THEN amount ELSE 0 END),0) AS pending FROM orders",
+    "SELECT COALESCE(SUM(CASE WHEN status IN ('confirmed','paid_review','refunding','partially_refunded','refunded','cancelled') AND payment_intent IS NOT NULL THEN amount ELSE 0 END),0) AS received,COALESCE(SUM(refunded),0) AS refunded,COALESCE(SUM(CASE WHEN status='pending' AND expires_at>unixepoch() THEN amount ELSE 0 END),0) AS pending FROM visible_orders",
   ).first();
   const alerts = (
     await c.env.DB.prepare(
-      "SELECT id,status FROM orders WHERE status='paid_review' UNION ALL SELECT id,'email_'||status FROM outbox WHERE status IN ('failed','review') UNION ALL SELECT id,'refund_'||status FROM refund_jobs WHERE status IN ('review','failed') LIMIT 40",
+      "SELECT id,status FROM visible_orders WHERE status='paid_review' UNION ALL SELECT id,'email_'||status FROM outbox WHERE status IN ('failed','review') UNION ALL SELECT id,'refund_'||status FROM refund_jobs WHERE order_id IN (SELECT id FROM visible_orders) AND status IN ('review','failed') LIMIT 40",
     ).all()
   ).results;
   return c.json({ stats: stats.results, money, alerts });
@@ -819,11 +820,13 @@ app.get('/api/admin/participants', async (c) => {
     activity,
     activity,
   ];
-  const total = await c.env.DB.prepare('SELECT COUNT(*) AS count FROM registrations r' + where)
+  const total = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS count FROM visible_registrations r' + where,
+  )
     .bind(...values)
     .first<any>();
   const rows = await c.env.DB.prepare(
-    'SELECT r.id,r.first_name,r.last_name,r.email,r.status,r.price,r.order_id,r.checked_at,a.name,a.distance FROM registrations r JOIN activities a ON a.id=r.activity_id' +
+    'SELECT r.id,r.first_name,r.last_name,r.email,r.status,r.price,r.order_id,r.checked_at,a.name,a.distance FROM visible_registrations r JOIN activities a ON a.id=r.activity_id' +
       where +
       ' ORDER BY r.created_at DESC,r.id LIMIT 30 OFFSET ?',
   )
@@ -833,7 +836,7 @@ app.get('/api/admin/participants', async (c) => {
 });
 app.get('/api/admin/participants/:id', async (c) => {
   await staffActor(c, 'participants');
-  const r = await c.env.DB.prepare('SELECT * FROM registrations WHERE id=?')
+  const r = await c.env.DB.prepare('SELECT * FROM visible_registrations WHERE id=?')
     .bind(c.req.param('id'))
     .first<any>();
   if (!r) fail(404, 'Dossier introuvable');
@@ -846,7 +849,9 @@ app.get('/api/admin/participants/:id', async (c) => {
         .bind(r.id)
         .all()
     ).results,
-    order: await c.env.DB.prepare('SELECT * FROM orders WHERE id=?').bind(r.order_id).first(),
+    order: await c.env.DB.prepare('SELECT * FROM visible_orders WHERE id=?')
+      .bind(r.order_id)
+      .first(),
   });
 });
 app.patch('/api/admin/participants/:id', async (c) => {
@@ -864,7 +869,7 @@ app.patch('/api/admin/participants/:id', async (c) => {
     .strict()
     .parse(await c.req.json());
   if (!Object.keys(x).length) fail(400, 'Aucune modification');
-  if (!(await c.env.DB.prepare('SELECT id FROM registrations WHERE id=?').bind(id).first()))
+  if (!(await c.env.DB.prepare('SELECT id FROM visible_registrations WHERE id=?').bind(id).first()))
     fail(404, 'Dossier introuvable');
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -882,7 +887,7 @@ app.get('/api/admin/export', async (c) => {
   const a = await staffActor(c, 'export');
   const rs = (
     await c.env.DB.prepare(
-      'SELECT id,first_name,last_name,email,status,activity_id,price,checked_at FROM registrations ORDER BY created_at',
+      'SELECT id,first_name,last_name,email,status,activity_id,price,checked_at FROM visible_registrations ORDER BY created_at',
     ).all<any>()
   ).results;
   const clean = (v: any) =>
@@ -924,7 +929,7 @@ app.post('/api/admin/refunds', async (c) => {
       confirm: z.literal(true),
     })
     .parse(await c.req.json());
-  const o = await c.env.DB.prepare('SELECT * FROM orders WHERE id=?')
+  const o = await c.env.DB.prepare('SELECT * FROM visible_orders WHERE id=?')
     .bind(body.orderId)
     .first<any>();
   if (
@@ -1007,7 +1012,7 @@ app.put('/api/admin/activities', async (c) => {
   const x = activitySchema.parse(await c.req.json());
   if (x.capacity !== null) {
     const n = await c.env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM registrations WHERE activity_id=? AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))",
+      "SELECT COUNT(*) AS n FROM visible_registrations WHERE activity_id=? AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))",
     )
       .bind(x.id)
       .first<any>();
@@ -1140,7 +1145,7 @@ app.get('/api/admin/checkin/search', async (c) => {
   return c.json(
     (
       await c.env.DB.prepare(
-        'SELECT r.id,r.ticket,r.first_name,r.last_name,r.status,r.checked_at,a.name,a.distance FROM registrations r JOIN activities a ON a.id=r.activity_id WHERE r.first_name LIKE ? OR r.last_name LIKE ? OR r.id=? LIMIT 20',
+        'SELECT r.id,r.ticket,r.first_name,r.last_name,r.status,r.checked_at,a.name,a.distance FROM visible_registrations r JOIN activities a ON a.id=r.activity_id WHERE r.first_name LIKE ? OR r.last_name LIKE ? OR r.id=? LIMIT 20',
       )
         .bind('%' + q + '%', '%' + q + '%', q)
         .all()
@@ -1155,7 +1160,7 @@ app.post('/api/admin/checkin', async (c) => {
   if (x.undo && a.role !== 'admin' && !a.permissions.includes('participants'))
     fail(403, 'L’annulation de présence nécessite une permission supérieure.');
   const r = await c.env.DB.prepare(
-    "UPDATE registrations SET checked_at=? WHERE ticket=? AND status IN ('confirmed','partially_refunded') AND " +
+    "UPDATE registrations SET checked_at=? WHERE ticket=? AND removed_at IS NULL AND status IN ('confirmed','partially_refunded') AND " +
       (x.undo ? 'checked_at IS NOT NULL' : 'checked_at IS NULL') +
       ' RETURNING id,first_name,last_name,checked_at',
   )
@@ -1235,7 +1240,7 @@ app.get('/api/admin/mail', async (c) => {
   return c.json(
     (
       await c.env.DB.prepare(
-        "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
+        "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
       ).all()
     ).results,
   );
@@ -1272,7 +1277,7 @@ async function recipients(env: Env, input: any) {
       : "r.status IN ('confirmed','partially_refunded')";
   const rows = (
     await env.DB.prepare(
-      'SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id,a.name AS activity_name FROM registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE ' +
+      'SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id,a.name AS activity_name FROM visible_registrations r JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE ' +
         where,
     )
       .bind(...(input.ids?.length ? input.ids : input.activityId ? [input.activityId] : []))
@@ -1389,7 +1394,7 @@ app.get('/api/admin/audit', async (c) => {
 app.post('/api/admin/resend/:id', async (c) => {
   const a = await staffActor(c, 'communications');
   const r = await c.env.DB.prepare(
-    "SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id FROM registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
+    "SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
   )
     .bind(c.req.param('id'))
     .first<any>();
@@ -1412,7 +1417,7 @@ app.get('/api/account/export', async (c) => {
   const a = await actor(c);
   const regs = (
     await c.env.DB.prepare(
-      'SELECT r.* FROM registrations r JOIN orders o ON o.id=r.order_id WHERE COALESCE(r.transferred_user_id,o.user_id)=?',
+      'SELECT r.* FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE COALESCE(r.transferred_user_id,o.user_id)=?',
     )
       .bind(a.id)
       .all<any>()
@@ -1482,6 +1487,7 @@ app.post('/api/webhooks/resend', async (c) => {
 });
 transferRoutes(app, { actor, settings, audit, fail, limited });
 offlineRoutes(app, { staffActor, audit, fail });
+orderRemovalRoutes(app, { staffActor, settings, audit, fail, limited });
 extensions(app, { actor, staffActor, settings, audit, fail, limited });
 app.all('/api/*', (c) => c.json({ error: 'Route introuvable' }, 404));
 app.get('*', async (c) => {
@@ -1510,6 +1516,7 @@ export async function scheduled(env: Env) {
       "UPDATE registration_transfers SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
     ),
   ]);
+  await closeRemovedCheckouts(env);
   await processRefunds(env);
   await processMail(env);
 }

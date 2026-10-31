@@ -43,6 +43,22 @@ Les textes de l’histoire, de la cause, des politiques et des FAQ se modifient 
 
 Les cinq activités sont les catégories de cette édition. Cette version ne permet pas encore de créer une autre édition parallèle ni une nouvelle activité depuis l’interface; une évolution du schéma/administration est nécessaire pour cela. Modifier l’événement courant ne remplace pas les snapshots des dossiers existants.
 
+## Retirer une commande complète
+
+Dans Participants, ouvrir une fiche puis choisir **Retirer toute la commande**. La confirmation liste toutes les personnes concernées, le montant payé après rabais, les remboursements antérieurs et le nouveau montant demandé. Indiquer le motif privé, cocher la confirmation, puis valider. Cette action est réservée au rôle administrateur, même si un organisateur a des permissions de remboursement.
+
+Toutes les participations de cette commande disparaissent des listes, exports et statistiques métier. Leurs billets deviennent invalides et les invitations de transfert sont annulées. Les nouveaux envois ciblés excluent ces participations; un courriel déjà transmis au prestataire ne peut pas être rappelé. Une trace comptable est conservée dans **Retraits privés** avec le motif, l’admin, la date, le montant demandé et l’état Stripe. Il ne s’agit pas d’un effacement des renseignements personnels.
+
+Le montant remboursable est calculé par le serveur : montant réellement payé après promotion, moins les remboursements déjà effectués. La politique acceptée à l’achat s’applique : à 15 jours ou plus de l’événement, remboursement du solde admissible; à moins de 15 jours, aucun remboursement. Une inscription gratuite n’entraîne aucun remboursement. Un remboursement déjà en cours ou à rapprocher doit être résolu avant le retrait. Un paiement confirmé tardivement reste rattaché à la trace privée et ne réactive aucun billet.
+
+L’acheteur et l’admin qui agit reçoivent la confirmation du retrait. Le courriel initial distingue une demande de remboursement de sa réussite. Stripe doit confirmer la réussite avant l’envoi de la confirmation finale du remboursement. Le journal de courriels indique l’état réel d’envoi/livraison; la mise en file ne garantit pas la réception.
+
+## Photos
+
+Le compartiment privé R2 utilisé est `ride-for-brains-media`. Dans Cloudflare : Workers et Pages → ride-for-brains → Liaisons / Bindings → Ajouter une liaison → Compartiment R2. Nom de variable : **MEDIA**; compartiment : **ride-for-brains-media**. Enregistrer et déployer si demandé. Il n’est pas nécessaire d’activer une adresse publique R2 : le site sert les images par son propre chemin `/media/`.
+
+Le fichier `wrangler.json` contient cette même liaison pour les prochaines publications. Dans l’éditeur, une vérification indique si le Worker possède réellement le stockage. Après configuration, utiliser **Revérifier le stockage**. Les photos JPEG, PNG, WebP ou AVIF de moins de 15 Mo sont converties en WebP de 1 Mo maximum avant envoi. Une URL HTTPS reste utilisable sans téléversement.
+
 ## Formulaires
 
 Choisir une activité, ajouter/réordonner/retirer des questions, choisir texte, liste ou case à cocher, indiquer les obligations et les conditions d’affichage. Les identifiants sont stables. Prévisualiser, puis publier la nouvelle version après confirmation.
