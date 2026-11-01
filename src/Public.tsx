@@ -556,12 +556,20 @@ export function Practical() {
               <h3>
                 {sports.find((g) => g.id === a.sport)?.label} · {a.distance}
               </h3>
-              <p>{a.route.description || 'À confirmer.'}</p>
+              <p>
+                {a.route.description ||
+                  (a.route.coordinates?.length > 1 || a.route.mapUrl || a.route.gpxUrl
+                    ? 'Parcours disponible.'
+                    : 'Parcours à venir.')}
+              </p>
               {a.route.supplies?.length > 0 && (
                 <p>Ravitaillements : {a.route.supplies.join(' · ')}</p>
               )}
               <Link to={'/activites/' + a.id} className="text-link">
-                Informations sur cette activité <ArrowRight size={15} />
+                {a.route.coordinates?.length > 1 || a.route.mapUrl
+                  ? 'Voir la carte du parcours'
+                  : 'Informations sur cette activité'}{' '}
+                <ArrowRight size={15} />
               </Link>
             </article>
           ))}
