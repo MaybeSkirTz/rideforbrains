@@ -1,5 +1,15 @@
 import React from 'react';
+import {
+  ADMIN_ACCESS_MESSAGE,
+  ADMIN_ACCESS_URL,
+  requiresDocumentNavigation,
+  STAFF_REAUTH_MESSAGE,
+} from '../shared/admin-access';
 export function go(path: string) {
+  if (requiresDocumentNavigation(path)) {
+    location.assign(path);
+    return;
+  }
   history.pushState({}, '', path);
   dispatchEvent(new PopStateEvent('popstate'));
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -10,7 +20,14 @@ export function Link({ to, children, className = '', ...rest }: any) {
       href={to}
       className={className}
       onClick={(e) => {
-        if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) {
+        if (
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.shiftKey &&
+          !e.altKey &&
+          e.button === 0 &&
+          !requiresDocumentNavigation(to)
+        ) {
           e.preventDefault();
           go(to);
         }
@@ -25,6 +42,20 @@ export function Notice({ error, children }: any) {
   return (
     <div role={error ? 'alert' : 'status'} className={'notice ' + (error ? 'error' : '')}>
       {children}
+      {error && children === ADMIN_ACCESS_MESSAGE && (
+        <p>
+          <a className="button" href={ADMIN_ACCESS_URL}>
+            Vérifier mon accès administrateur
+          </a>
+        </p>
+      )}
+      {error && children === STAFF_REAUTH_MESSAGE && (
+        <p>
+          <a className="button" href="/connexion?retour=%2Forganisation&mode=sign-in&reauth=1">
+            Vérifier mon accès équipe
+          </a>
+        </p>
+      )}
     </div>
   );
 }

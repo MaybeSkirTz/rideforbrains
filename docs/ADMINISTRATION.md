@@ -2,7 +2,7 @@
 
 ## Accéder
 
-Se connecter par mot de passe et code à 6 chiffres sur `/connexion`, puis ouvrir `/admin`. Pour un ancien compte, utiliser « Mot de passe oublié / Définir mon mot de passe ». Le compte doit être promu par la procédure du README ou par un administrateur principal. En production, passer aussi par Cloudflare Access configuré avec MFA. Le rôle est lu côté serveur pour chaque opération.
+Se connecter par mot de passe et code à 6 chiffres sur `/connexion`. L’administrateur principal ouvre `/admin`, protégé en production par Cloudflare Access avec MFA. Les organisateurs et bénévoles ouvrent **Mon espace → Espace équipe** (`/organisation`), avec les permissions attribuées sur le site, sans ajout Cloudflare individuel. Pour un ancien compte, utiliser « Mot de passe oublié / Définir mon mot de passe ». Le rôle est lu côté serveur pour chaque opération. Voir [le guide des nouveaux accès et courriels](EQUIPE-PARTICIPANTS-COURRIELS.md).
 
 | Rôle                     | Accès                                                                                                   |
 | ------------------------ | ------------------------------------------------------------------------------------------------------- |
@@ -12,6 +12,12 @@ Se connecter par mot de passe et code à 6 chiffres sur `/connexion`, puis ouvri
 | Participant              | Ses dossiers achetés avec ce compte et ses messages                                                     |
 
 L’acheteur peut inscrire plusieurs personnes et gère tout ce dossier. Un participant inscrit par un autre acheteur ne reçoit pas automatiquement l’accès au compte ou aux dossiers de celui-ci. Le formulaire exige l’autorisation de transmettre les données et consentements pour chaque personne.
+
+## Équipe et accès
+
+Un administrateur principal peut retirer les accès de tout autre membre, y compris un autre administrateur : cliquer **Retirer les accès** sur sa ligne, puis confirmer. Son compte participant et ses inscriptions sont conservés. Ses prochaines requêtes d’équipe ou d’administration sont refusées; ses autorisations de synchronisation hors ligne sont invalidées. Une attribution ultérieure d’accès ne réactive pas les anciennes listes de secours.
+
+Votre propre ligne affiche **Votre accès**, sans bouton de retrait, pour éviter de vous bloquer. Le retrait est consigné dans le journal d’audit. Le rôle principal ne supprime pas l’exigence Cloudflare Access pour gérer ces droits en production.
 
 ## Vue d’ensemble
 
@@ -53,6 +59,10 @@ Le montant remboursable est calculé par le serveur : montant réellement payé 
 
 L’acheteur et l’admin qui agit reçoivent la confirmation du retrait. Le courriel initial distingue une demande de remboursement de sa réussite. Stripe doit confirmer la réussite avant l’envoi de la confirmation finale du remboursement. Le journal de courriels indique l’état réel d’envoi/livraison; la mise en file ne garantit pas la réception.
 
+## Cartes des parcours
+
+Les coordonnées GPX déjà importées sont affichées automatiquement sur un fond OpenStreetMap dans la page de chaque activité. La carte se centre sur le GPX et permet de voir les routes en zoomant. Pour remplacer un tracé, importer le fichier dans l’activité puis enregistrer; aucun autre compte ni clé n’est nécessaire. Voir [les cartes GPX](CARTES-GPX.md).
+
 ## Photos
 
 Le compartiment privé R2 utilisé est `ride-for-brains-media`. Dans Cloudflare : Workers et Pages → ride-for-brains → Liaisons / Bindings → Ajouter une liaison → Compartiment R2. Nom de variable : **MEDIA**; compartiment : **ride-for-brains-media**. Enregistrer et déployer si demandé. Il n’est pas nécessaire d’activer une adresse publique R2 : le site sert les images par son propre chemin `/media/`.
@@ -60,6 +70,10 @@ Le compartiment privé R2 utilisé est `ride-for-brains-media`. Dans Cloudflare 
 Le fichier `wrangler.json` contient cette même liaison pour les prochaines publications. Dans l’éditeur, une vérification indique si le Worker possède réellement le stockage. Après configuration, utiliser **Revérifier le stockage**. Les photos JPEG, PNG, WebP ou AVIF de moins de 15 Mo sont converties en WebP de 1 Mo maximum avant envoi. Une URL HTTPS reste utilisable sans téléversement.
 
 ## Formulaires
+
+### Participants mineurs
+
+Le vélo reste réservé aux 18 ans et plus. Pour la course et la marche, un mineur prépare son inscription depuis son compte puis demande l’accord d’un parent disposant d’un compte distinct. La page `/autorisations-parentales` présente les demandes au parent connecté avec l’adresse désignée. Aucune réservation ni paiement ne peut précéder l’accord. La fiche de participation conserve le nom et le courriel du parent, sa déclaration, la date et la version des conditions. L’identité du participant mineur reste verrouillée pour préserver cet accord. Voir [le guide parents, galerie et accès](PARENTS-GALERIE-ACCES.md).
 
 Choisir une activité, ajouter/réordonner/retirer des questions, choisir texte, liste ou case à cocher, indiquer les obligations et les conditions d’affichage. Les identifiants sont stables. Prévisualiser, puis publier la nouvelle version après confirmation.
 

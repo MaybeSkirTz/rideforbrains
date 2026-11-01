@@ -23,6 +23,7 @@ export type Actor = {
   name: string;
   role: string;
   permissions: string[];
+  verifiedAt?: number;
 };
 export type AppContext = { Bindings: Env; Variables: { actor: Actor } };
 export const isLocal = (env: Env) =>

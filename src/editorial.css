@@ -133,6 +133,29 @@ a:not(.button):not(.brand):hover {
 .account-link {
   white-space: nowrap;
 }
+.mobile-account-bar {
+  display: none;
+}
+@media (max-width: 900px) {
+  .mobile-account-bar {
+    display: block;
+    padding: 0 5% 12px;
+    background: var(--cream);
+    border-bottom: 1px solid var(--line);
+  }
+  .mobile-account-bar > a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 12px;
+    background: var(--lime);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
 .dev-banner {
   font-size: 11px;
   background: #e8eddf;
@@ -919,10 +942,54 @@ a:not(.button):not(.brand):hover {
   align-items: center;
   gap: 8px;
 }
-.route-map > svg {
+.route-map-canvas {
+  height: clamp(340px, 45vw, 500px);
   width: 100%;
-  height: auto;
-  display: block;
+  isolation: isolate;
+  z-index: 0;
+  background: #e8ecdf;
+  color: #153e35;
+}
+.route-map-canvas .leaflet-control-attribution {
+  font-size: 11px;
+  background: #fffffff2;
+}
+.route-map-canvas .leaflet-control-attribution a {
+  color: #164f70;
+  text-decoration: underline;
+}
+.route-map-canvas .leaflet-bottom.leaflet-left {
+  bottom: 22px;
+}
+.route-map-caption {
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.route-map-caption p {
+  margin: 0 0 8px;
+}
+.route-map-caption p:last-child {
+  margin-bottom: 0;
+}
+.route-map-legend,
+.route-map-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.route-map-legend {
+  gap: 20px;
+}
+.route-map-legend i {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #163e36;
+}
+.route-map-legend .route-finish {
+  background: #d65632;
 }
 .route-point-list {
   font-size: 13px;
@@ -2314,4 +2381,370 @@ footer .footer-brand {
   max-height: 240px;
   object-fit: contain;
   margin-block: 16px;
+}
+.photo-album {
+  width: 100%;
+  min-width: 0;
+  margin-block: 24px;
+}
+.album-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+}
+.album-toolbar p {
+  margin: 0;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.album-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.album-stage {
+  position: relative;
+  height: clamp(260px, 42vw, 480px);
+  overflow: hidden;
+  background: linear-gradient(130deg, #102d2b, #203f3c);
+  touch-action: pan-y;
+}
+.album-image {
+  display: block;
+  padding: 0;
+  border: 0;
+  width: 100%;
+  height: 100%;
+  cursor: zoom-in;
+  background: transparent;
+}
+.album-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.album-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid #fff9;
+  border-radius: 50%;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  background: #f6f5ede8;
+  color: #12312f;
+  cursor: pointer;
+}
+.album-arrow.previous {
+  left: 12px;
+}
+.album-arrow.next {
+  right: 12px;
+}
+.album-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px;
+}
+.album-caption {
+  margin: 0;
+  height: 2.8em;
+  line-height: 1.4;
+  font-size: 0.85rem;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.album-actions {
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+.album-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #bbc4b9;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.album-thumbs {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 78px;
+  gap: 9px;
+  max-width: 100%;
+  padding: 5px 1px;
+  scrollbar-width: thin;
+}
+.album-thumb {
+  display: block;
+  padding: 0;
+  border: 2px solid transparent;
+  background: #e6e9df;
+  width: 90px;
+  height: 64px;
+  flex: none;
+  cursor: pointer;
+}
+.album-thumb[aria-current='true'] {
+  border-color: #1d655b;
+  box-shadow: 0 0 0 2px #c6df67;
+}
+.album-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.album-arrow:focus-visible,
+.album-control:focus-visible,
+.album-thumb:focus-visible,
+.album-image:focus-visible {
+  outline: 3px solid #c6df67;
+  outline-offset: 3px;
+}
+.photo-lightbox {
+  width: min(1200px, 96vw);
+  max-width: 96vw;
+  height: min(900px, 92dvh);
+  max-height: 92dvh;
+  padding: 16px;
+  border: 0;
+  background: #102d2b;
+  color: #f6f5ed;
+}
+.photo-lightbox[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.photo-lightbox::backdrop {
+  background: #071b1bf0;
+}
+body:has(.photo-lightbox[open]) {
+  overflow: hidden;
+}
+.album-lightbox-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: none;
+}
+.album-lightbox-header h2 {
+  margin: 0;
+  flex: 1;
+  font-size: clamp(1rem, 2vw, 1.6rem);
+}
+.album-lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  touch-action: pan-y;
+}
+.album-lightbox-stage > img {
+  height: 100%;
+  width: 100%;
+  display: block;
+  object-fit: contain;
+}
+.album-lightbox-caption {
+  margin: 0;
+  flex: none;
+  max-height: 14dvh;
+  overflow: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+@media (max-width: 700px) {
+  .album-stage {
+    height: 280px;
+  }
+  .album-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .album-actions {
+    justify-content: space-between;
+  }
+  .album-arrow {
+    width: 44px;
+    height: 44px;
+  }
+  .album-arrow.previous {
+    left: 8px;
+  }
+  .album-arrow.next {
+    right: 8px;
+  }
+  .photo-lightbox {
+    padding: 12px;
+  }
+}
+.guardian-panel,
+.guardian-card {
+  border: 1px solid #b8c8a7;
+  padding: 24px;
+  margin-block: 24px;
+  background: #edf1e5;
+}
+.guardian-panel h3,
+.guardian-card h3 {
+  font-size: 1.3rem;
+  margin-top: 0;
+}
+.guardian-card details {
+  margin-block: 18px;
+}
+.guardian-card dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr;
+  gap: 10px 20px;
+}
+.guardian-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .guardian-panel,
+  .guardian-card {
+    padding: 18px;
+  }
+  .guardian-card dl {
+    display: block;
+  }
+  .guardian-card dd {
+    margin-bottom: 12px;
+  }
+}
+
+.home-practical {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr auto;
+  gap: 24px;
+  align-items: center;
+  padding: 36px 5.5vw;
+  border-top: 1px solid #cbd2c5;
+  background: #eaf0e3;
+}
+.home-practical > div {
+  display: grid;
+  gap: 7px;
+}
+.home-practical span {
+  font-size: 0.8rem;
+  color: #556b65;
+}
+.home-practical strong {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.public-participants > .field {
+  max-width: 620px;
+}
+.roster-panel {
+  padding: 30px;
+  border: 1px solid #c4d0bb;
+  background: #edf1e5;
+  margin-block: 28px;
+}
+.roster-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+.roster-heading h2 {
+  font-size: clamp(1.6rem, 3vw, 2.5rem);
+  margin: 8px 0;
+}
+.roster-heading > p {
+  max-width: 190px;
+}
+.roster-heading > p strong {
+  display: block;
+  font-size: 2.8rem;
+  line-height: 1;
+}
+.roster-heading > p span {
+  font-size: 0.85rem;
+}
+.roster-names {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 26px;
+  margin: 26px 0;
+}
+.roster-names li {
+  padding: 14px 0;
+  border-bottom: 1px solid #cad5c1;
+  overflow-wrap: anywhere;
+}
+.listing-preference {
+  border-block: 1px solid #d3dacb;
+  padding: 16px 0;
+  margin: 18px 0;
+}
+.listing-preference form {
+  display: grid;
+  gap: 12px;
+}
+.listing-preference .button {
+  justify-self: start;
+}
+@media (max-width: 900px) {
+  .home-practical {
+    grid-template-columns: 1fr 1fr;
+  }
+  .roster-names {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .home-practical {
+    gap: 24px 16px;
+    padding: 28px 5.5vw;
+  }
+  .home-practical > div:nth-child(3),
+  .home-practical > .text-link {
+    grid-column: 1/-1;
+  }
+  .roster-panel {
+    padding: 20px;
+  }
+  .roster-heading {
+    display: block;
+  }
+  .roster-heading > p {
+    max-width: none;
+  }
+  .roster-heading > p strong {
+    display: inline-block;
+    font-size: 2rem;
+    margin-right: 8px;
+  }
+  .roster-names {
+    gap: 0 18px;
+  }
 }

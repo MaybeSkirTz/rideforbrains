@@ -38,7 +38,7 @@ export default function RouteEditor({ route, change }: { route: any; change: (v:
       <legend>Tracé officiel et points de repère</legend>
       <Field
         label="Importer les coordonnées d’un GPX validé"
-        hint="Le fichier reste local pendant la lecture. Les coordonnées ne sont publiées qu’en enregistrant cette activité. Le lien GPX de téléchargement se configure séparément."
+        hint="La carte se centre automatiquement sur les coordonnées de ce GPX et affiche les rues sous le tracé. Le fichier reste local pendant la lecture; enregistrez l’activité pour publier. Le lien GPX de téléchargement se configure séparément."
       >
         <input
           type="file"

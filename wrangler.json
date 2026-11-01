@@ -14,6 +14,8 @@
       "/media/*",
       "/",
       "/activites",
+      "/participants",
+      "/organisation",
       "/activites/*",
       "/cause",
       "/equipe",
@@ -30,6 +32,7 @@
       "/attente",
       "/billet/*",
       "/transfert",
+      "/autorisations-parentales",
       "/admin",
       "/admin/*",
       "/sitemap.xml",
@@ -43,7 +46,8 @@
       "/parcours",
       "/annulation",
       "/desabonnement",
-      "/courriels-locaux"
+      "/courriels-locaux",
+      "/organisation/*"
     ]
   },
   "d1_databases": [

@@ -41,7 +41,15 @@ test('Incremental platform migration preserves existing settings, paid registrat
       order = await db.prepare('SELECT * FROM orders').first();
     await migrate(db);
     await migrate(db);
-    assert.deepEqual(await db.prepare('SELECT * FROM settings').first(), settings);
+    const migratedSettings = await db.prepare('SELECT * FROM settings').first();
+    const previous = JSON.parse(settings.data),
+      current = JSON.parse(migratedSettings.data);
+    for (const [key, value] of Object.entries(previous))
+      if (!['minimumAge', 'terms', 'termsVersion', 'privacy', 'faq'].includes(key))
+        assert.deepEqual(current[key], value, key);
+    assert.equal(current.minimumAge, 0);
+    assert.ok(current.terms.includes('parent ou tuteur légal'));
+    assert.equal(migratedSettings.revision, settings.revision + 2);
     const nextOrder = await db.prepare('SELECT * FROM orders').first();
     for (const [key, value] of Object.entries(order)) assert.equal(nextOrder[key], value, key);
     assert.equal(nextOrder.removed_at, null);
@@ -50,9 +58,56 @@ test('Incremental platform migration preserves existing settings, paid registrat
     for (const [key, value] of Object.entries(registration)) assert.equal(next[key], value, key);
     assert.equal(next.refunded_amount, 0);
     assert.equal(next.transferred_user_id, null);
+    assert.equal(next.is_minor, 0);
+    assert.equal(next.guardian_snapshot, null);
     assert.ok(
       await db.prepare("SELECT name FROM app_migrations WHERE name='0006_platform.sql'").first(),
     );
+  } finally {
+    await mf.dispose();
+  }
+});
+
+test('Previously consumed promo codes are archived during migration and old names remain private', async () => {
+  const mf = new Miniflare({
+    modules: true,
+    script: 'export default {fetch(){return new Response("fixture")}}',
+    d1Databases: ['DB'],
+  });
+  try {
+    const db = await mf.getD1Database('DB');
+    await db.prepare('CREATE TABLE app_migrations(name TEXT PRIMARY KEY)').run();
+    for (const name of readdirSync('migrations')
+      .filter((n) => n.endsWith('.sql') && n < '0010')
+      .sort())
+      await db.batch([
+        ...statements(readFileSync('migrations/' + name, 'utf8'))
+          .filter((s) => !s.startsWith('PRAGMA'))
+          .map((s) => db.prepare(s)),
+        db.prepare('INSERT INTO app_migrations(name) VALUES(?)').bind(name),
+      ]);
+    await db.batch([
+      db.prepare(
+        "INSERT INTO user(id,name,email,emailVerified,createdAt,updatedAt) VALUES('legacy','Test','legacy@example.test',1,0,0)",
+      ),
+      db.prepare(
+        "INSERT INTO promos(code,percent,max_uses,active) VALUES('USED-A',100,1,1),('USED-B',25,1,1),('AVAILABLE',25,5,1)",
+      ),
+      db.prepare(
+        "INSERT INTO orders(id,user_id,request_key,amount,status,promo,expires_at) VALUES('first','legacy','first',0,'confirmed','USED-A',0),('second','legacy','second',1125,'refunded','USED-B',0)",
+      ),
+    ]);
+    await migrate(db);
+    await migrate(db);
+    const codes = (
+      await db.prepare('SELECT code,active,redeemed FROM promo_usage ORDER BY code').all()
+    ).results;
+    assert.deepEqual(codes, [
+      { code: 'AVAILABLE', active: 1, redeemed: 0 },
+      { code: 'USED-A', active: 0, redeemed: 1 },
+      { code: 'USED-B', active: 0, redeemed: 1 },
+    ]);
+    assert.equal((await db.prepare('SELECT COUNT(*) n FROM orders').first()).n, 2);
   } finally {
     await mf.dispose();
   }

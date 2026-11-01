@@ -74,7 +74,9 @@ export async function authenticatedSession(c: any) {
   });
   const s = (await response.json()) as any;
   if (!s?.user?.emailVerified) return null;
-  const privacy = await c.env.DB.prepare('SELECT tab_hash FROM session_privacy WHERE session_id=?')
+  const privacy = await c.env.DB.prepare(
+    'SELECT tab_hash,created_at FROM session_privacy WHERE session_id=?',
+  )
     .bind(s.session.id)
     .first();
   // Older link-only sessions must authenticate through the new password + code flow once.
@@ -86,7 +88,7 @@ export async function authenticatedSession(c: any) {
     return null;
   for (const cookie of response.headers.getSetCookie())
     c.header('Set-Cookie', cookie, { append: true });
-  return s;
+  return { ...s, passwordVerifiedAt: privacy.created_at };
 }
 export function passwordAuthRoutes(app: any, { fail, limited, botCheck }: any) {
   const ready = (env: Env) => {

@@ -1,6 +1,6 @@
 # Ride For Brains
 
-Application française de la deuxième édition : **21 août 2027**, accueil **7 h 30**, **18 ans et plus**, **15 $ CA par activité**, sans quota initial. Vélo 100 km, course 10 / 5 / 2 km et marche 5 km. Thomas est le contact principal. Le lieu et les horaires des départs restent à confirmer.
+Application française de la deuxième édition : **21 août 2027**, accueil **7 h 30**, **15 $ CA par activité**, sans quota initial. Vélo 100 km réservé aux **18 ans et plus**; course 10 / 5 / 2 km et marche 5 km ouvertes à **tous les âges**, avec autorisation depuis un compte parent distinct pour les mineurs. Thomas est le contact principal. Le lieu et les horaires des départs restent à confirmer.
 
 Le code comprend une interface publique éditoriale, un système de scènes Three.js différées, les inscriptions individuelles ou groupées, une connexion par mot de passe et code à 6 chiffres avec Better Auth, un espace participant avec billet complet/QR et une administration. Workers sert l’application et ses métadonnées HTML; D1 stocke les dossiers. Stripe Checkout et Resend restent intégrés côté serveur.
 
@@ -70,5 +70,7 @@ Les clés secrètes restent dans `.dev.vars` localement ou dans les secrets Work
 - [Budget et sources](docs/BUDGET.md)
 - [Fonctionnalités livrées et travail restant](docs/ETAT.md)
 - [Résultats des tests et limites des vérifications](docs/TESTS.md)
+- [Mineurs, autorisations parentales, galerie et accès admin](docs/PARENTS-GALERIE-ACCES.md)
+- [Accueil simplifié, codes épuisés, participants publics, équipe et courriels en attente](docs/EQUIPE-PARTICIPANTS-COURRIELS.md)
 
 Les politiques sont des brouillons à faire valider. Les logos sont conservés sans modification; leur utilisation et la présentation de la relation avec Brain Canada doivent être validées avant publication.

@@ -1,5 +1,13 @@
 const base = 'https://internal.rideforbrains.invalid';
-const routes = new Set(['/inscription', '/attente', '/espace', '/admin', '/transfert']);
+const routes = new Set([
+  '/inscription',
+  '/attente',
+  '/espace',
+  '/admin',
+  '/organisation',
+  '/transfert',
+  '/autorisations-parentales',
+]);
 
 /** Only app-owned destinations; preserve the complete activity query string. */
 export function safeReturnUrl(value: unknown, fallback = '/espace'): string {

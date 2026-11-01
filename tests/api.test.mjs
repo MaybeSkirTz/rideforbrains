@@ -1,15 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import ts from 'typescript';
-
-const { outputText } = ts.transpileModule(
-  readFileSync(new URL('../src/api.ts', import.meta.url), 'utf8'),
-  { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } },
-);
-const { api } = await import(
-  'data:text/javascript;base64,' + Buffer.from(outputText).toString('base64')
-);
+import { clientModules } from './client-modules.mjs';
+const { api } = await import(clientModules().api);
 
 test('API errors stay readable when an upstream server returns empty or HTML responses', async (t) => {
   const fetch = t.mock.method(globalThis, 'fetch');

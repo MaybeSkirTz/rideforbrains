@@ -41,8 +41,13 @@ import { api, downloadPrivate, money, statuses, date } from './api';
 import { Context, useApp, type Data } from './context';
 import { go, Link, Notice, Field, Button, Page, DynamicFields } from './ui';
 import { accountUrl } from '../shared/navigation';
-import { donationNotice } from '../shared/event';
+import { donationNotice, donationDestination } from '../shared/event';
 import Account from './Account';
+import { PublicParticipants, ListingPreference } from './PublicParticipants';
+import { publicListingText } from '../shared/public-participants';
+import { staffHome } from '../shared/admin-access';
+import Guardians, { GuardianRequest } from './Guardians';
+import { participationPolicy } from '../shared/participation';
 import { Home, Activities, Practical, Team, Cause, FAQ } from './Public';
 
 import Turnstile from './Turnstile';
@@ -81,6 +86,9 @@ function App() {
       '/espace': 'Mon espace',
       '/connexion': 'Connexion',
       '/admin': 'Administration',
+      '/organisation': 'Espace équipe',
+      '/participants': 'Les participants',
+      '/autorisations-parentales': 'Autorisations parentales',
       '/activites': 'Les activités',
       '/infos': 'Infos pratiques',
       '/cause': 'La cause',
@@ -123,6 +131,7 @@ function App() {
   else if (path === '/inscription') page = <Registration key={url} />;
   else if (path === '/attente') page = <Waitlist />;
   else if (path === '/connexion' || path === '/compte') page = <Account />;
+  else if (path === '/autorisations-parentales') page = <Guardians />;
   else if (path.startsWith('/billet/'))
     page = (
       <Suspense fallback={<p>Chargement du billet…</p>}>
@@ -130,7 +139,8 @@ function App() {
       </Suspense>
     );
   else if (path === '/espace') page = <Participant />;
-  else if (path.startsWith('/admin'))
+  else if (path === '/participants') page = <PublicParticipants key={url} />;
+  else if (path === '/organisation' || path.startsWith('/admin'))
     page = (
       <Suspense fallback={<p>Chargement de l’administration…</p>}>
         <Admin />
@@ -229,6 +239,7 @@ function Header({ path }: any) {
           <Link to="/activites" className={path === '/activites' ? 'active' : ''}>
             Les activités
           </Link>
+          <Link to="/participants">Les participants</Link>
           <Link to="/cause">La cause</Link>
           <Link to="/infos">Infos pratiques</Link>
           <Link to="/equipe">Notre histoire</Link>
@@ -250,6 +261,13 @@ function Header({ path }: any) {
           {open ? <X /> : <Menu />}
         </button>
       </header>
+      <div className="mobile-account-bar">
+        <Link to={user ? '/espace' : '/connexion'}>
+          <UserRound size={17} />
+          {user ? 'Mon espace' : 'Se connecter / S’inscrire'}
+          <ArrowUpRight size={16} />
+        </Link>
+      </div>
     </>
   );
 }
@@ -257,19 +275,21 @@ function Footer() {
   const { data, user } = useApp();
   return (
     <footer>
-      <div className="footer-top">
-        <div>
-          <p className="eyebrow lime-text">ON SE RETROUVE SUR LA LIGNE DE DÉPART.</p>
-          <h2>
-            On se retrouve
-            <br />
-            au départ<span className="lime-text">.</span>
-          </h2>
+      {location.pathname !== '/' && (
+        <div className="footer-top">
+          <div>
+            <p className="eyebrow lime-text">ON SE RETROUVE SUR LA LIGNE DE DÉPART.</p>
+            <h2>
+              On se retrouve
+              <br />
+              au départ<span className="lime-text">.</span>
+            </h2>
+          </div>
+          <Link to="/inscription" className="button lime">
+            Trouver mon activité <ArrowUpRight size={20} />
+          </Link>
         </div>
-        <Link to="/inscription" className="button lime">
-          Trouver mon activité <ArrowUpRight size={20} />
-        </Link>
-      </div>
+      )}
       <div className="footer-grid">
         <div>
           <Link to="/" className="footer-brand">
@@ -283,6 +303,7 @@ function Footer() {
         <div>
           <b>L’événement</b>
           <Link to="/activites">Vélo, course et marche</Link>
+          <Link to="/participants">Les participants</Link>
           <Link to="/infos">Renseignements pratiques</Link>
           <Link to="/faq">Questions fréquentes</Link>
         </div>
@@ -301,12 +322,16 @@ function Footer() {
           <Link to="/conditions">Conditions d’inscription</Link>
           <Link to="/annulation">Annulation et remboursement</Link>
           <Link to="/confidentialite">Confidentialité</Link>
-          {user && user.role !== 'participant' && <Link to="/admin">Administration</Link>}
+          {user && user.role !== 'participant' && (
+            <Link to={staffHome(user.role)}>
+              {user.role === 'admin' ? 'Administration' : 'Espace équipe'}
+            </Link>
+          )}
         </div>
       </div>
       <div className="footer-bottom">
         <span>© {new Date().getFullYear()} Ride For Brains</span>
-        <span>Les dons sont effectués directement sur la plateforme de Brain Canada.</span>
+        <span>{donationDestination}</span>
       </div>
     </footer>
   );
@@ -441,8 +466,7 @@ function Legal({ page }: any) {
             </p>
             <p>
               La demande se fait depuis l’espace de l’acheteur. Un remboursement est confirmé
-              seulement après son traitement par le prestataire. Les dons à Brain Canada sont gérés
-              séparément sur sa plateforme.
+              seulement après son traitement par le prestataire. {donationDestination}
             </p>
             <p>
               Les dispositions en cas d’annulation ou de report par l’organisation restent à valider
@@ -451,6 +475,22 @@ function Legal({ page }: any) {
           </>
         ) : (
           <p className="prewrap">{page === '/confidentialite' ? s.privacy : s.terms}</p>
+        )}
+        {page === '/confidentialite' && (
+          <p>
+            Les cartes des parcours affichent les coordonnées GPX publiées par l’organisation sur un
+            fond OpenStreetMap. Quand vous ouvrez la page d’un parcours, votre navigateur demande
+            les images de carte à ce service et lui transmet notamment votre adresse IP. La carte ne
+            demande pas votre position GPS et ne transmet pas les renseignements de votre compte.{' '}
+            <a
+              href="https://osmfoundation.org/wiki/Privacy_Policy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Confidentialité d’OpenStreetMap
+            </a>
+            .
+          </p>
         )}
         <p className="small">Version des conditions : {s.termsVersion}</p>
         <a href={'mailto:' + s.contact} className="text-link">
@@ -503,7 +543,7 @@ function Waitlist() {
                 activityId: activity.id,
                 firstName: f.get('firstName'),
                 lastName: f.get('lastName'),
-                adult: true,
+                adult: activity.sport === 'velo' || f.get('ageGroup') === 'adult',
               });
               setDone(true);
             } catch (e) {
@@ -524,10 +564,26 @@ function Waitlist() {
               <input name="lastName" required maxLength={150} />
             </Field>
           </div>
-          <label className="checkbox">
-            <input type="checkbox" required />
-            J’aurai au moins 18 ans le jour de l’événement.
-          </label>
+          {activity.sport === 'velo' ? (
+            <label className="checkbox">
+              <input type="checkbox" required />
+              J’aurai au moins 18 ans le jour de l’événement.
+            </label>
+          ) : (
+            <>
+              <Field label="Âge le jour de l’événement">
+                <select name="ageGroup" required defaultValue="">
+                  <option value="">Choisissez</option>
+                  <option value="adult">18 ans ou plus</option>
+                  <option value="minor">Moins de 18 ans</option>
+                </select>
+              </Field>
+              <p className="small">
+                La liste d’attente n’est pas une inscription. Pour participer, un mineur devra
+                obtenir l’accord d’un parent depuis son propre compte.
+              </p>
+            </>
+          )}
           {error && <Notice error>{error}</Notice>}
           <Button busy={busy}>Rejoindre la liste d’attente</Button>
         </form>
@@ -542,7 +598,7 @@ function emptyParticipant(activity: any) {
     lastName: '',
     email: '',
     phone: '',
-    adult: false,
+    adult: null,
     emergencyName: '',
     emergencyPhone: '',
     answers: {} as any,
@@ -550,6 +606,7 @@ function emptyParticipant(activity: any) {
     conditions: false,
     photo: false,
     marketing: false,
+    publicListing: false,
     authority: false,
   };
 }
@@ -586,6 +643,10 @@ function Registration() {
                       conditions: false,
                       formVersion: a.form_version,
                       answers: p.formVersion === a.form_version ? p.answers : {},
+                      guardianRequestId:
+                        p.formVersion === a.form_version ? p.guardianRequestId : undefined,
+                      guardianStatus:
+                        p.formVersion === a.form_version ? p.guardianStatus : undefined,
                     }
                   : null;
               })
@@ -617,7 +678,19 @@ function Registration() {
   };
   const s = data.settings;
   const change = (i: number, k: string, v: any) =>
-    setPeople((p) => p.map((r, n) => (i === n ? { ...r, [k]: v } : r)));
+    setPeople((p) =>
+      p.map((r, n) =>
+        i === n
+          ? {
+              ...r,
+              ...(['guardianRequestId', 'guardianStatus', 'conditions', 'authority'].includes(k)
+                ? {}
+                : { guardianRequestId: undefined, guardianStatus: undefined }),
+              [k]: v,
+            }
+          : r,
+      ),
+    );
   const canRegister = data.environment === 'development' || s.registrationOpen;
   const next = async (e: any) => {
     e.preventDefault();
@@ -631,6 +704,10 @@ function Registration() {
             go(accountUrl(location.pathname + location.search));
             return;
           }
+          if (people.some((p) => !p.adult && p.guardianStatus !== 'approved'))
+            throw new Error(
+              'Le parent doit d’abord autoriser chaque participation mineure depuis son propre compte.',
+            );
           const q = await api('/quote', { participants: people.map((p) => p.activityId), promo });
           setQuote(q);
           setStep(3);
@@ -721,6 +798,8 @@ function Registration() {
                                       activityId: a.id,
                                       formVersion: a.form_version,
                                       answers: {},
+                                      guardianRequestId: undefined,
+                                      guardianStatus: undefined,
                                     }
                                   : r,
                               ),
@@ -770,7 +849,7 @@ function Registration() {
                       maxLength={40}
                     />
                   </Field>
-                  <Notice>18 ans et plus. Aucune donnée médicale n’est demandée.</Notice>
+                  <Notice>{participationPolicy} Aucune donnée médicale n’est demandée.</Notice>
                 </>
               ) : step === 2 ? (
                 <>
@@ -845,15 +924,37 @@ function Registration() {
                           answers={p.answers}
                           onChange={(answers: any) => change(i, 'answers', answers)}
                         />
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            checked={p.adult}
-                            required
-                            onChange={(e) => change(i, 'adult', e.target.checked)}
-                          />
-                          Cette personne aura au moins 18 ans le jour de l’événement.
-                        </label>
+                        {activity.sport === 'velo' ? (
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={p.adult === true}
+                              required
+                              onChange={(e) => change(i, 'adult', e.target.checked)}
+                            />
+                            Cette personne aura au moins 18 ans le jour de l’événement.
+                          </label>
+                        ) : (
+                          <Field label="Âge de cette personne le jour de l’événement">
+                            <select
+                              required
+                              value={p.adult === true ? 'adult' : p.adult === false ? 'minor' : ''}
+                              onChange={(e) =>
+                                change(
+                                  i,
+                                  'adult',
+                                  e.target.value === '' ? null : e.target.value === 'adult',
+                                )
+                              }
+                            >
+                              <option value="">Choisissez</option>
+                              <option value="adult">18 ans ou plus</option>
+                              <option value="minor">
+                                Moins de 18 ans — autorisation parentale requise
+                              </option>
+                            </select>
+                          </Field>
+                        )}
                         <label className="checkbox">
                           <input
                             type="checkbox"
@@ -891,6 +992,42 @@ function Registration() {
                           Cette personne souhaite recevoir les communications promotionnelles.
                           (Facultatif)
                         </label>
+                        <label className="checkbox">
+                          <input
+                            type="checkbox"
+                            checked={!!p.publicListing}
+                            onChange={(e) => change(i, 'publicListing', e.target.checked)}
+                          />
+                          {publicListingText}
+                          {p.adult === false &&
+                            ' Le parent devra également autoriser cet affichage.'}
+                        </label>
+                        {activity.sport !== 'velo' && p.adult === false && (
+                          <GuardianRequest
+                            participant={p}
+                            onChange={(k, v) => change(i, k, v)}
+                            onCreated={async (id, status) => {
+                              const nextPeople = people.map((person, n) =>
+                                n === i
+                                  ? { ...person, guardianRequestId: id, guardianStatus: status }
+                                  : person,
+                              );
+                              setPeople(nextPeople);
+                              await api('/draft', { participants: nextPeople, promo }, 'PUT');
+                              setDraftMessage(
+                                'La demande et votre brouillon sont enregistrés. Vous pourrez reprendre cette inscription après l’accord du parent.',
+                              );
+                            }}
+                            onSignIn={async () => {
+                              try {
+                                await api('/draft/guest', { participants: people, promo });
+                                go(accountUrl(location.pathname + location.search));
+                              } catch (e) {
+                                setError((e as Error).message);
+                              }
+                            }}
+                          />
+                        )}
                       </fieldset>
                     );
                   })}
@@ -932,6 +1069,9 @@ function Registration() {
                           <p>
                             Photos : {p.photo ? 'oui' : 'non'} · Promotions :{' '}
                             {p.marketing ? 'oui' : 'non'}
+                            <br />
+                            Liste publique :{' '}
+                            {p.publicListing ? 'prénom et initiale du nom' : 'nom privé'}
                             <br />
                             Conditions acceptées · {s.termsVersion}
                           </p>
@@ -1131,12 +1271,15 @@ function Participant() {
       intro="Les dossiers ci-dessous sont ceux que vous avez inscrits avec ce compte."
     >
       <div className="actions account-actions">
+        <Link to="/autorisations-parentales" className="button outline">
+          Autorisations parentales
+        </Link>
         <Link to="/inscription" className="button">
           Ajouter une inscription <Plus size={17} />
         </Link>
         {user.role !== 'participant' && (
-          <Link className="button outline" to="/admin">
-            Administration <Settings2 size={17} />
+          <Link className="button outline" to={staffHome(user.role)}>
+            {user.role === 'admin' ? 'Administration' : 'Espace équipe'} <Settings2 size={17} />
           </Link>
         )}
         <button
@@ -1192,6 +1335,7 @@ function Participant() {
               <p>
                 {r.first_name} {r.last_name} · {r.email}
               </p>
+              <ListingPreference registration={r} onSaved={load} />
               <div className="summary-line">
                 <span>Prix de cette participation</span>
                 <strong>{money(r.price)}</strong>

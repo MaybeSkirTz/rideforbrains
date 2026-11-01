@@ -29,7 +29,10 @@ export const participantSchema = z
     lastName: line,
     email,
     phone: z.string().trim().min(7).max(35),
-    adult: z.literal(true),
+    adult: z.boolean(),
+    guardianEmail: email.optional(),
+    guardianRequestId: z.uuid().optional(),
+    guardianStatus: z.enum(['pending', 'approved', 'declined', 'cancelled']).optional(),
     emergencyName: line,
     emergencyPhone: z.string().trim().min(7).max(35),
     answers: z.record(z.string(), z.union([z.string().max(1000), z.boolean()])),
@@ -37,6 +40,7 @@ export const participantSchema = z
     conditions: z.literal(true),
     photo: z.boolean(),
     marketing: z.boolean(),
+    publicListing: z.boolean().default(false),
     authority: z.literal(true),
   })
   .strict();
@@ -84,7 +88,7 @@ export const settingsSchema = z
     registrationOpen: z.boolean(),
     salesOpenAt: z.number().int().nullable(),
     salesCloseAt: z.number().int().nullable(),
-    minimumAge: z.literal(18),
+    minimumAge: z.literal(0),
     refundDays: z.literal(15),
     taxMode: z.enum(['unconfirmed', 'included', 'not_applicable']),
     termsVersion: z.string().min(1).max(80),

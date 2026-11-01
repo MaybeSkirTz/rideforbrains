@@ -120,7 +120,7 @@ export default function Account() {
       setBusy(false);
     }
   };
-  if (user)
+  if (user && params.get('reauth') !== '1')
     return (
       <Page eyebrow="Votre compte" title="Vous êtes connecté.">
         <p>Votre compte et vos billets vous attendent.</p>

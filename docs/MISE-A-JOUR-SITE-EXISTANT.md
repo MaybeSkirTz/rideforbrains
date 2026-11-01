@@ -14,7 +14,7 @@ Attendre la fin de chaque commande. En cas d’erreur, s’arrêter avant la pub
 
 ## 2. Vérifier le compte Cloudflare
 
-```powershell
+```powershelln
 npx wrangler whoami
 ```
 
@@ -37,7 +37,7 @@ npm run check
 npm test
 ```
 
-TypeScript doit terminer sans erreur et les 88 tests doivent passer. Ces tests sont isolés et ne déclenchent pas de paiement ou de remboursement réel.
+TypeScript doit terminer sans erreur et les 129 tests doivent passer. Ces tests sont isolés et ne déclenchent pas de paiement ou de remboursement réel.
 
 ## 5. Remplacer la version du site
 
@@ -46,6 +46,10 @@ npm run deploy
 ```
 
 Cette commande compile la nouvelle interface, applique les ajouts de tables/colonnes à la base existante et publie le code dans le même Worker. Elle garde le domaine, les secrets existants et les variables Cloudflare ajoutées dans le tableau de bord. Le mode Stripe reste `live`, comme avant; la commande ne réalise aucune transaction bancaire.
+
+La migration `0009_guardian_authorizations.sql` ajoute le parcours parent/enfant et une nouvelle version des conditions pour les nouvelles inscriptions : vélo 18+, course et marche tous âges avec accord d’un compte parent distinct avant 18 ans. Les conditions déjà acceptées restent conservées dans les dossiers historiques. Les réglages d’images publiées restent conservés; la nouvelle galerie les regroupe dans un cadre compact. Lire [le fonctionnement et la recette](PARENTS-GALERIE-ACCES.md).
+
+La migration `0010_participants_promos.sql` archive les codes déjà consommés à leur limite et ajoute le consentement facultatif à la liste publique. L’accueil est simplifié et l’équipe dispose d’un accès sans ajout Cloudflare individuel. Le traitement des confirmations est déclenché immédiatement après validation de la commande. Pour une confirmation déjà en attente, utiliser **Communications → Traiter la file existante** après publication. Voir [le guide détaillé](EQUIPE-PARTICIPANTS-COURRIELS.md).
 
 Si Cloudflare demande une confirmation de migration, vérifier que la base indiquée est `ride-for-brains` puis confirmer avec `y`. Ne pas changer d’identifiant D1 pour contourner une erreur.
 

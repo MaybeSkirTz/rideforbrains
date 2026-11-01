@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { uuid, now } from './types';
 import { digest } from './crypto';
 export function offlineRoutes(app: any, { staffActor, audit, fail }: any) {
-  app.post('/api/admin/offline/snapshot', async (c: any) => {
+  app.post('/offline/snapshot', async (c: any) => {
     const a = await staffActor(c, 'checkin');
     z.object({ confirm: z.literal(true) })
       .strict()
@@ -36,7 +36,7 @@ export function offlineRoutes(app: any, { staffActor, audit, fail }: any) {
     );
     return c.json({ id, expiresAt, tickets });
   });
-  app.post('/api/admin/offline/sync', async (c: any) => {
+  app.post('/offline/sync', async (c: any) => {
     const a = await staffActor(c, 'checkin');
     const x = z
       .object({
@@ -90,7 +90,7 @@ export function offlineRoutes(app: any, { staffActor, audit, fail }: any) {
     }
     return c.json({ results });
   });
-  app.post('/api/admin/offline/revoke', async (c: any) => {
+  app.post('/offline/revoke', async (c: any) => {
     const a = await staffActor(c, 'checkin');
     const { id } = z
       .object({ id: z.uuid() })

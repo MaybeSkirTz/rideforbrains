@@ -16,6 +16,8 @@ Le schéma n’inclut aucun faux participant, aucun administrateur automatique, 
 
 Créer une application Cloudflare Access couvrant **`/admin` et `/api/admin/*`**, avec une politique limitée aux membres de l’organisation et une identité exigeant une authentification à facteurs multiples. **Ne pas protéger tout le domaine**, qui doit rester accessible aux participants et à Stripe. La simple réception d’un courriel Access n’est pas une preuve de MFA : configurer le fournisseur d’identité et la politique correspondants, puis les tester.
 
+Cette application est destinée à l’administration principale. Les organisateurs et bénévoles délégués utilisent désormais `/organisation` et `/api/organisation/*`, avec mot de passe, code courriel récent et permissions du site. Ne pas ajouter ces chemins à l’application Access : cela réintroduirait la gestion manuelle des adresses que ce portail évite. Voir [les accès d’équipe](EQUIPE-PARTICIPANTS-COURRIELS.md).
+
 Définir `ACCESS_TEAM_DOMAIN` (ex. `votre-equipe.cloudflareaccess.com`) et `ACCESS_AUD` de cette application. Le Worker vérifie la signature JWT, l’émetteur, l’audience, l’expiration, le courriel et les permissions D1 pour chaque action administrative. Le courriel Access doit correspondre à celui du compte participant.
 
 Se connecter sur `/connexion` et vérifier son courriel, puis, depuis un terminal autorisé sur la bonne base :

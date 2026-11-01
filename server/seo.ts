@@ -1,6 +1,7 @@
 import type { Env } from './types';
 import { parse } from './types';
 import { calendarICS } from '../shared/event';
+import { ageLabel } from '../shared/participation';
 const escape = (s: unknown) =>
   String(s ?? '').replace(
     /[&<>"']/g,
@@ -12,12 +13,16 @@ const pages: Record<string, [string, string]> = {
     'Vélo, course et marche pour se rassembler autour de la recherche sur le cerveau.',
   ],
   '/activites': ['Les activités', 'Vélo 100 km, course 10, 5 et 2 km, marche 5 km.'],
+  '/participants': [
+    'Les participants',
+    'Découvrez les participations confirmées par activité et les noms affichés avec accord.',
+  ],
   '/velo': ['Vélo 100 km', 'Une sortie à vélo de 100 km pour Ride For Brains.'],
   '/course': ['Course 10, 5 et 2 km', 'Choisissez votre distance de course pour Ride For Brains.'],
   '/marche': ['Marche 5 km', 'Cinq kilomètres à pied pour se retrouver.'],
   '/cause': [
     'La cause',
-    'Découvrez la cause et faites un don séparément sur la plateforme officielle de Brain Canada.',
+    'Soutenez la collecte Ride For Brains, hébergée sur la plateforme officielle de collecte de fonds de Brain Canada.',
   ],
   '/equipe': ['Notre histoire', 'Thomas, François-Xavier et Sammy : l’équipe de Ride For Brains.'],
   '/infos': [
@@ -83,7 +88,7 @@ export async function publicDocument(request: Request, env: Env): Promise<Respon
     ? activities.find((a) => path === '/activites/' + a.id)
     : null;
   const privatePage =
-    /^\/(admin|api|connexion|compte|espace|inscription|attente|billet|transfert|desabonnement|courriels-locaux)(\/|$)/.test(
+    /^\/(admin|organisation|api|connexion|compte|espace|inscription|attente|billet|transfert|autorisations-parentales|desabonnement|courriels-locaux)(\/|$)/.test(
       path,
     );
   const known =
@@ -104,7 +109,7 @@ export async function publicDocument(request: Request, env: Env): Promise<Respon
     ? `${({ velo: 'Vélo', course: 'Course', marche: 'Marche' } as any)[activity.sport]} · ${activity.name} · ${activity.distance} · ${price}`
     : pages[path]?.[0] || 'Ride For Brains';
   const description = activity
-    ? `${activity.name}, ${activity.distance}, le ${date}. ${price} CAD par participation. Réservé aux 18 ans et plus. Frais d’inscription distincts des dons.`
+    ? `${activity.name}, ${activity.distance}, le ${date}. ${price} CAD par participation. ${ageLabel(activity.sport)}. Frais d’inscription distincts des dons.`
     : `${pages[path]?.[1] || 'Ride For Brains.'} ${s.edition} · ${date} · Accueil à ${s.reception.replace(':', ' h ')}.`;
   const canonical = env.APP_URL + path,
     image =

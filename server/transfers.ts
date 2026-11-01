@@ -3,6 +3,7 @@ import { uuid, now, parse, json } from './types';
 import { digest, opaqueToken } from './crypto';
 import { participantSchema, validateAnswers, email } from './validation';
 import { editorial } from '../shared/editorial';
+import { listingConsent } from '../shared/public-participants';
 export function transferRoutes(app: any, { actor, settings, audit, fail, limited }: any) {
   const policy = async (c: any) => {
     const s = await settings(c.env),
@@ -27,6 +28,11 @@ export function transferRoutes(app: any, { actor, settings, audit, fail, limited
       .bind(c.req.param('id'), a.id)
       .first();
     if (!r) fail(409, 'Cette participation ne peut pas être transférée.');
+    if (r.is_minor)
+      fail(
+        409,
+        'Le transfert d’une participation mineure nécessite une nouvelle autorisation parentale. Contactez l’organisation.',
+      );
     const id = uuid(),
       token = opaqueToken(),
       expires = Math.min(e.transferDeadline!, now() + 172800);
@@ -74,18 +80,23 @@ export function transferRoutes(app: any, { actor, settings, audit, fail, limited
     if (x.termsVersion !== s.termsVersion || x.participant.email !== a.email)
       fail(409, 'Vérifiez votre courriel et acceptez la version actuelle des conditions.');
     const t = await c.env.DB.prepare(
-      "SELECT t.*,r.form_snapshot,r.form_version,r.activity_id FROM registration_transfers t JOIN visible_registrations r ON r.id=t.registration_id WHERE t.token_hash=? AND t.recipient=? AND t.status='pending' AND t.expires_at>unixepoch() AND r.status='confirmed' AND r.checked_at IS NULL",
+      "SELECT t.*,r.form_snapshot,r.form_version,r.activity_id,r.is_minor FROM registration_transfers t JOIN visible_registrations r ON r.id=t.registration_id WHERE t.token_hash=? AND t.recipient=? AND t.status='pending' AND t.expires_at>unixepoch() AND r.status='confirmed' AND r.checked_at IS NULL",
     )
       .bind(await digest(c.req.param('token')), a.email)
       .first();
     if (!t) fail(409, 'Invitation expirée ou indisponible.');
+    if (t.is_minor || !x.participant.adult)
+      fail(
+        409,
+        'Une participation mineure nécessite un parcours d’autorisation parentale distinct.',
+      );
     if (t.activity_id !== x.participant.activityId || t.form_version !== x.participant.formVersion)
       fail(409, 'Le formulaire doit être rechargé.');
     const p = x.participant,
       answers = validateAnswers(parse(t.form_snapshot, []), p.answers);
     const result = await c.env.DB.batch([
       c.env.DB.prepare(
-        "UPDATE registrations SET transferred_user_id=?,first_name=?,last_name=?,email=?,phone=?,emergency_name=?,emergency_phone=?,answers=?,conditions_version=?,conditions_snapshot=?,photo=?,marketing=?,ticket=? WHERE id=? AND status='confirmed' AND checked_at IS NULL AND EXISTS(SELECT 1 FROM registration_transfers WHERE id=? AND status='pending' AND expires_at>unixepoch())",
+        "UPDATE registrations SET transferred_user_id=?,first_name=?,last_name=?,email=?,phone=?,emergency_name=?,emergency_phone=?,answers=?,conditions_version=?,conditions_snapshot=?,photo=?,marketing=?,ticket=?,public_listing=?,public_listing_consent=? WHERE id=? AND status='confirmed' AND checked_at IS NULL AND EXISTS(SELECT 1 FROM registration_transfers WHERE id=? AND status='pending' AND expires_at>unixepoch())",
       ).bind(
         a.id,
         p.firstName,
@@ -100,6 +111,8 @@ export function transferRoutes(app: any, { actor, settings, audit, fail, limited
         p.photo ? 1 : 0,
         p.marketing ? 1 : 0,
         opaqueToken(),
+        p.publicListing ? 1 : 0,
+        p.publicListing ? listingConsent(a.id) : null,
         t.registration_id,
         t.id,
       ),

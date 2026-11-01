@@ -1,4 +1,38 @@
+import {
+  ADMIN_ACCESS_MESSAGE,
+  isAdminApi,
+  staffApiPath,
+  STAFF_REAUTH_MESSAGE,
+} from '../shared/admin-access';
+export class AdminAccessRequired extends Error {
+  readonly code = 'ADMIN_ACCESS_REQUIRED';
+  constructor() {
+    super(ADMIN_ACCESS_MESSAGE);
+    this.name = 'AdminAccessRequired';
+  }
+}
 const tabStorageKey = 'rfb-tab-session';
+async function siteFetch(path: string, init: RequestInit = {}) {
+  path = staffApiPath(path, typeof location === 'undefined' ? '' : location.pathname);
+  let response: Response;
+  try {
+    response = await fetch('/api' + path, {
+      ...init,
+      credentials: 'same-origin',
+      redirect: 'manual',
+      headers: { ...sessionHeaders(), ...init.headers },
+    });
+  } catch {
+    throw new Error('Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.');
+  }
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+    if (isAdminApi(path)) throw new AdminAccessRequired();
+    throw new Error(
+      'Le service demande une nouvelle connexion. Rechargez la page avant de réessayer.',
+    );
+  }
+  return response;
+}
 function sessionHeaders(): Record<string, string> {
   try {
     const key = sessionStorage.getItem(tabStorageKey);
@@ -19,7 +53,13 @@ export function saveSessionPreference(tabKey: string | null) {
   }
 }
 export async function downloadPrivate(path: string, filename: string) {
-  const res = await fetch('/api' + path, { credentials: 'same-origin', headers: sessionHeaders() });
+  const res = await siteFetch(path);
+  if (
+    res.status === 401 &&
+    typeof location !== 'undefined' &&
+    location.pathname === '/organisation'
+  )
+    throw new Error(STAFF_REAUTH_MESSAGE);
   if (!res.ok) throw new Error('Le téléchargement a échoué. Vérifiez votre connexion.');
   const url = URL.createObjectURL(await res.blob()),
     a = document.createElement('a');
@@ -33,10 +73,9 @@ export async function api<T = any>(
   body?: unknown,
   method = body ? 'POST' : 'GET',
 ): Promise<T> {
-  const res = await fetch('/api' + path, {
+  const res = await siteFetch(path, {
     method,
-    credentials: 'same-origin',
-    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...sessionHeaders() },
+    headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -48,6 +87,13 @@ export async function api<T = any>(
   }
   if (!res.ok) {
     const message = data?.error?.message || data?.error || data?.message;
+    if (
+      isAdminApi(path) &&
+      res.status === 403 &&
+      (message === ADMIN_ACCESS_MESSAGE ||
+        message === 'Connectez-vous via l’accès renforcé de l’organisation.')
+    )
+      throw new AdminAccessRequired();
     throw new Error(
       typeof message === 'string'
         ? message

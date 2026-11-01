@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import { uuid, now, parse, isLocal } from './types';
 import { processRefunds } from './payments';
-export function extensions(app: any, { actor, staffActor, settings, audit, fail, limited }: any) {
-  app.get('/api/admin/media/status', async (c: any) => {
+export function extensions(
+  app: any,
+  { actor, staffActor, settings, audit, fail, limited }: any,
+  adminApi: any,
+) {
+  adminApi.get('/media/status', async (c: any) => {
     await staffActor(c, 'event');
     return c.json({ configured: !!c.env.MEDIA });
   });
-  app.post('/api/admin/media', async (c: any) => {
+  adminApi.post('/media', async (c: any) => {
     const a = await staffActor(c, 'event');
     if (!c.env.MEDIA)
       fail(
@@ -56,7 +60,7 @@ export function extensions(app: any, { actor, staffActor, settings, audit, fail,
       return c.json({ status: 'unavailable' }, 503);
     }
   });
-  app.get('/api/admin/health', async (c: any) => {
+  adminApi.get('/health', async (c: any) => {
     await staffActor(c, 'event');
     const s = await settings(c.env);
     const missing = [
@@ -154,7 +158,7 @@ export function extensions(app: any, { actor, staffActor, settings, audit, fail,
     c.executionCtx.waitUntil(processRefunds(c.env));
     return c.json({ status, refundRequested: amount });
   });
-  app.get('/api/admin/analytics', async (c: any) => {
+  adminApi.get('/analytics', async (c: any) => {
     await staffActor(c, 'participants');
     const queries = [
       "SELECT date(created_at,'unixepoch') AS label,COUNT(*) AS orders,COALESCE(SUM(CASE WHEN payment_intent IS NOT NULL THEN amount-refunded ELSE 0 END),0) AS revenue FROM visible_orders GROUP BY label ORDER BY label DESC LIMIT 60",

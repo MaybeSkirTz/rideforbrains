@@ -69,7 +69,7 @@ export function orderRemovalRoutes(app: any, { staffActor, settings, audit, fail
       refundRequested: o.payment_intent && eligible ? Math.max(0, o.amount - o.refunded) : 0,
     };
   };
-  app.get('/api/admin/orders/:id/removal-preview', async (c: any) => {
+  app.get('/orders/:id/removal-preview', async (c: any) => {
     await admin(c);
     const p = await preview(c, c.req.param('id'));
     return c.json({
@@ -85,7 +85,7 @@ export function orderRemovalRoutes(app: any, { staffActor, settings, audit, fail
       promo: p.order.promo,
     });
   });
-  app.post('/api/admin/orders/:id/remove', async (c: any) => {
+  app.post('/orders/:id/remove', async (c: any) => {
     const a = await admin(c);
     await limited(c.env, 'order-removal:' + a.id, 20, 3600);
     const x = z
@@ -208,7 +208,7 @@ export function orderRemovalRoutes(app: any, { staffActor, settings, audit, fail
       message: 'Commande retirée. Les confirmations sont ajoutées à la file de courriels.',
     });
   });
-  app.get('/api/admin/removed-orders', async (c: any) => {
+  app.get('/removed-orders', async (c: any) => {
     await admin(c);
     return c.json(
       (

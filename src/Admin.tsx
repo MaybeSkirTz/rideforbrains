@@ -32,6 +32,7 @@ import {
 import { useApp } from './context';
 import { Page, Link, Button, Field, Notice, DynamicFields } from './ui';
 import { api, downloadPrivate, money, statuses, date } from './api';
+import { accountUrl } from '../shared/navigation';
 
 type Feedback = {
   error: string;
@@ -49,7 +50,7 @@ export default function Admin() {
   if (!user)
     return (
       <Page eyebrow="ÉQUIPE RIDE FOR BRAINS" title="L’espace de l’organisation.">
-        <Link className="button" to="/connexion">
+        <Link className="button" to={accountUrl(location.pathname, 'sign-in')}>
           Me connecter <ArrowRight size={17} />
         </Link>
       </Page>
@@ -63,10 +64,12 @@ export default function Admin() {
         </Link>
       </Page>
     );
+  const portal = location.pathname === '/organisation';
   const has = (permission: string) =>
-    user.role === 'admin' ||
-    (permission !== 'admin_only' && user.permissions.includes(permission)) ||
-    (user.role === 'checkin' && permission === 'checkin');
+    !(portal && ['staff', 'admin_only'].includes(permission)) &&
+    (user.role === 'admin' ||
+      (permission !== 'admin_only' && user.permissions.includes(permission)) ||
+      (user.role === 'checkin' && permission === 'checkin'));
   const tabs = [
     ['overview', 'Vue d’ensemble', LayoutDashboard, 'participants'],
     ['participants', 'Participants', Users, 'participants'],
@@ -133,7 +136,7 @@ export default function Admin() {
               canExport={has('export')}
               canRefund={has('refunds')}
               canMail={has('communications')}
-              canRemove={user.role === 'admin'}
+              canRemove={user.role === 'admin' && !portal}
             />
           ) : active === 'settings' ? (
             <Settings {...feedback} />
@@ -494,7 +497,13 @@ function Participants(
                 ['emergency_phone', 'Téléphone d’urgence'],
               ].map(([k, label]) => (
                 <Field key={k} label={label}>
-                  <input name={k} defaultValue={detail[k]} required key={detail.id + k} />
+                  <input
+                    name={k}
+                    defaultValue={detail[k]}
+                    required
+                    key={detail.id + k}
+                    readOnly={!!detail.is_minor && ['first_name', 'last_name'].includes(k)}
+                  />
                 </Field>
               ))}
             </div>
@@ -511,6 +520,28 @@ function Participants(
           </form>
           <div className="admin-section">
             <h3>Réponses au formulaire · version {detail.form_version}</h3>
+            <p className="small">
+              Âge déclaré au jour de l’événement :{' '}
+              {detail.is_minor ? 'moins de 18 ans' : '18 ans ou plus'}.
+            </p>
+            {detail.guardian && (
+              <details>
+                <summary>Autorisation parentale enregistrée</summary>
+                <p>
+                  {detail.guardian.signature} · {detail.guardian.parentEmail} ·{' '}
+                  {detail.guardian.relationship === 'parent' ? 'Parent' : 'Tuteur légal'}
+                </p>
+                <p className="small">
+                  Accord donné le {date(detail.guardian.decidedAt)} · conditions{' '}
+                  {detail.guardian.termsVersion}.
+                </p>
+                <p className="small prewrap">{detail.guardian.text}</p>
+                <p className="small">
+                  La personne et l’activité autorisées sont conservées avec cet accord. Une autre
+                  personne ou activité exige une nouvelle autorisation.
+                </p>
+              </details>
+            )}
             <dl>
               {detail.fields.map((f: any) => (
                 <React.Fragment key={f.id}>
@@ -752,7 +783,8 @@ function Settings({ setError, setMessage }: Feedback) {
         </Field>
         <p className="small">
           Le site n’ajoute pas de frais au participant. Faites valider le traitement fiscal avant de
-          choisir une option. La règle actuelle réserve les activités aux 18 ans et plus.
+          choisir une option. Le vélo reste réservé aux 18 ans et plus. La course et la marche
+          accueillent tous les âges, avec autorisation depuis le compte du parent pour un mineur.
         </p>
         <details className="settings-details">
           <summary>Contenus, FAQ, galerie et partenaires</summary>
@@ -1013,31 +1045,91 @@ function ActivityEditor({ activity, saved, setError }: any) {
   );
 }
 function Promos({ config, reload, setError, setMessage }: any) {
+  const [archive, setArchive] = useState(false);
+  const [promos, setPromos] = useState(config.promos);
+  useEffect(() => setPromos(config.promos), [config.promos]);
+  useEffect(() => {
+    let current = true;
+    const refresh = () => {
+      if (!document.hidden)
+        api('/admin/promos')
+          .then((rows) => {
+            if (current) setPromos(rows);
+          })
+          .catch((e) => {
+            if (current) setError(e.message);
+          });
+    };
+    const timer = setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      current = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [setError]);
+  const current = promos.filter((p: any) => ['active', 'reserved'].includes(p.state));
+  const archived = promos.filter((p: any) => !['active', 'reserved'].includes(p.state));
+  const rows = archive ? archived : current;
+  const labels: any = {
+    active: 'Actif',
+    reserved: 'Réservé temporairement',
+    exhausted: 'Épuisé',
+    expired: 'Expiré',
+    disabled: 'Désactivé',
+  };
   return (
     <section className="admin-section">
       <h3>Codes promotionnels</h3>
+      <p className="small">
+        Un code dont la limite d’utilisation est atteinte quitte automatiquement les codes actifs.
+        L’historique est conservé.
+      </p>
+      <div className="actions">
+        <Button
+          type="button"
+          className={!archive ? '' : 'outline'}
+          aria-pressed={!archive}
+          onClick={() => setArchive(false)}
+        >
+          Codes actifs ({current.length})
+        </Button>
+        <Button
+          type="button"
+          className={archive ? '' : 'outline'}
+          aria-pressed={archive}
+          onClick={() => setArchive(true)}
+        >
+          Codes terminés ({archived.length})
+        </Button>
+      </div>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Code</th>
               <th>Réduction</th>
-              <th>Limite</th>
-              <th>Actif</th>
+              <th>Utilisations / limite</th>
+              <th>État</th>
             </tr>
           </thead>
           <tbody>
-            {config.promos.map((p: any) => (
+            {rows.map((p: any) => (
               <tr key={p.code}>
                 <td>{p.code}</td>
                 <td>{p.percent} %</td>
-                <td>{p.max_uses ?? 'Illimitée'}</td>
-                <td>{p.active ? 'Oui' : 'Non'}</td>
+                <td>
+                  {p.redeemed} / {p.max_uses ?? 'Illimitée'}
+                  {p.reserved > 0 && (
+                    <span className="small"> · {p.reserved} réservation(s) en attente</span>
+                  )}
+                </td>
+                <td>{labels[p.state] || p.state}</td>
               </tr>
             ))}
-            {!config.promos.length && (
+            {!rows.length && (
               <tr>
-                <td colSpan={4}>Aucun code promotionnel.</td>
+                <td colSpan={4}>{archive ? 'Aucun code terminé.' : 'Aucun code actif.'}</td>
               </tr>
             )}
           </tbody>
@@ -1546,6 +1638,36 @@ function Communications({ setError, setMessage, selected }: Feedback & { selecte
       <section className="admin-section">
         <div className="admin-toolbar">
           <h3>Journal des courriels</h3>
+          <Button
+            type="button"
+            className="outline"
+            busy={busy}
+            onClick={async () => {
+              if (
+                !confirm(
+                  'Traiter les courriels déjà en attente ? Les envois programmés pour plus tard resteront en attente. Aucun nouveau message ne sera créé.',
+                )
+              )
+                return;
+              setBusy(true);
+              setError('');
+              try {
+                const r = await api('/admin/mail/process', { confirm: true });
+                setMessage(
+                  r.status === 'development'
+                    ? 'File locale uniquement : aucun envoi externe.'
+                    : 'Traitement de la file existante effectué. Consultez le journal pour connaître l’état réel de chaque envoi.',
+                );
+                await load();
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Traiter la file existante
+          </Button>
           <button className="text-link" onClick={load}>
             Actualiser
           </button>
@@ -1857,16 +1979,48 @@ function Submissions({ setError, setMessage }: Feedback) {
   );
 }
 function Staff({ setError, setMessage }: Feedback) {
-  const [rows, load] = useLoad('/admin/staff', setError);
+  const { user } = useApp();
+  const [rows, load, setRows] = useLoad('/admin/staff', setError);
   const [permissions, setPermissions] = useState<string[]>(['participants']),
-    [role, setRole] = useState('organizer');
+    [role, setRole] = useState('organizer'),
+    [removing, setRemoving] = useState(''),
+    [saving, setSaving] = useState(false);
+  const revoke = async (member: any) => {
+    if (
+      !confirm(
+        `Retirer tous les accès de ${member.name} (${member.email}) ? Cette personne conservera son compte participant et ses inscriptions.`,
+      )
+    )
+      return;
+    setRemoving(member.id);
+    setError('');
+    setMessage('');
+    try {
+      await api('/admin/staff/' + encodeURIComponent(member.id), { confirm: true }, 'DELETE');
+      setRows((current: any[]) => current?.filter((r) => r.id !== member.id));
+      setMessage(
+        `Tous les accès de ${member.name} ont été retirés. Son compte participant et ses inscriptions sont conservés.`,
+      );
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRemoving('');
+    }
+  };
   return (
     <>
       <h2>Une équipe, les bons accès.</h2>
       <p className="small">
-        Chaque membre doit d’abord créer son compte par courriel. Les accès au personnel sont
-        vérifiés côté serveur; la production exige également Cloudflare Access avec une politique
-        MFA.
+        Chaque membre crée son compte sur le site. Après attribution des permissions, les
+        organisateurs et bénévoles accèdent à l’espace équipe avec leur mot de passe et leur code
+        courriel, sans ajout dans Cloudflare. Les accès sont vérifiés à chaque requête; une nouvelle
+        connexion est demandée après huit heures. L’administration principale et la gestion des
+        accès restent protégées par Cloudflare.
+      </p>
+      <p className="small">
+        Vous pouvez retirer les accès de tout autre membre, y compris un autre administrateur. Votre
+        propre accès reste protégé pour éviter de vous bloquer.
       </p>
       <div className="table-wrap">
         <table>
@@ -1875,14 +2029,33 @@ function Staff({ setError, setMessage }: Feedback) {
               <th>Nom</th>
               <th>Courriel</th>
               <th>Rôle</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows?.map((r: any) => (
               <tr key={r.id}>
-                <td>{r.name}</td>
+                <td>
+                  {r.name}
+                  {r.id === user.id ? ' (vous)' : ''}
+                </td>
                 <td>{r.email}</td>
                 <td>{r.role}</td>
+                <td>
+                  {r.id === user.id ? (
+                    <span className="small">Votre accès</span>
+                  ) : (
+                    <Button
+                      type="button"
+                      className="outline"
+                      busy={removing === r.id}
+                      disabled={!!removing || saving}
+                      onClick={() => revoke(r)}
+                    >
+                      Retirer les accès
+                    </Button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1893,6 +2066,9 @@ function Staff({ setError, setMessage }: Feedback) {
         onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
+          setSaving(true);
+          setError('');
+          setMessage('');
           try {
             await api(
               '/admin/staff',
@@ -1903,10 +2079,16 @@ function Staff({ setError, setMessage }: Feedback) {
               },
               'PUT',
             );
-            setMessage('Accès de l’équipe mis à jour.');
+            setMessage(
+              role === 'admin'
+                ? 'Accès principal enregistré. Cloudflare Access reste requis pour ce rôle.'
+                : 'Permissions enregistrées. La personne peut ouvrir Mon espace → Espace équipe, ou /organisation. Aucun ajout Cloudflare nécessaire.',
+            );
             await load();
           } catch (e) {
             setError((e as Error).message);
+          } finally {
+            setSaving(false);
           }
         }}
       >
@@ -1917,7 +2099,7 @@ function Staff({ setError, setMessage }: Feedback) {
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="organizer">Organisateur</option>
             <option value="checkin">Bénévole d’accueil</option>
-            <option value="admin">Administrateur principal</option>
+            <option value="admin">Administrateur principal — Cloudflare Access requis</option>
           </select>
         </Field>
         {role === 'organizer' &&
@@ -1943,7 +2125,7 @@ function Staff({ setError, setMessage }: Feedback) {
               {label}
             </label>
           ))}
-        <Button>
+        <Button busy={saving} disabled={!!removing}>
           Enregistrer les accès <ShieldCheck size={16} />
         </Button>
       </form>

@@ -1,20 +1,15 @@
-import {
-  NeuralStory,
-  GatheringStory,
-  ArrivalStory,
-  SportMotionStory,
-  TeamMotion,
-  PreparationMotion,
-} from './MotionStories';
+import { ArrivalStory, SportMotionStory, TeamMotion, PreparationMotion } from './MotionStories';
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { ArrowUpRight, ArrowRight, Plus, Download } from 'lucide-react';
 import { useApp } from './context';
 import { Link, Page } from './ui';
 import { money } from './api';
-import { daysUntil, googleCalendarUrl, donationNotice } from '../shared/event';
+import { daysUntil, googleCalendarUrl, donationNotice, donationDestination } from '../shared/event';
 import { editorial, published } from '../shared/editorial';
 import { track } from './tracking';
 import Scene from './Scene';
+import PhotoAlbum from './PhotoAlbum';
+import { participationPolicy, ageLabel } from '../shared/participation';
 const RouteMap = lazy(() => import('./RouteMap'));
 export const eventDate = (s: any) =>
   new Date(s.eventAt).toLocaleDateString('fr-CA', {
@@ -65,21 +60,6 @@ function Countdown() {
     </span>
   );
 }
-function Photo({ photo, className = '' }: any) {
-  return (
-    <figure className={'real-photo ' + className}>
-      <img
-        src={photo.url}
-        alt={photo.alt}
-        width="1200"
-        height="800"
-        loading="lazy"
-        decoding="async"
-      />
-      {photo.caption && <figcaption>{photo.caption}</figcaption>}
-    </figure>
-  );
-}
 function FirstEdition() {
   const { data } = useApp();
   const e = editorial(data.settings).firstEdition;
@@ -95,13 +75,7 @@ function FirstEdition() {
         <h2>{e.title}</h2>
         {e.intro && <p>{e.intro}</p>}
       </div>
-      {photos.length > 0 && (
-        <div className="archive-gallery">
-          {photos.map((p, i) => (
-            <Photo photo={p} key={p.url} className={i === 0 ? 'archive-lead' : ''} />
-          ))}
-        </div>
-      )}
+      {photos.length > 0 && <PhotoAlbum photos={photos} label="Les souvenirs de Ride For Brains" />}
       {e.memories.length > 0 && (
         <div className="archive-memories">
           {e.memories.map((text, i) => (
@@ -230,7 +204,6 @@ export function Home() {
   const { data } = useApp();
   const s = data.settings,
     e = editorial(s);
-  const heroPhoto = published<any>(s.photos).find((p) => p.section === 'depart');
   useEffect(() => track('visit'), []);
   return (
     <>
@@ -263,7 +236,7 @@ export function Home() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Faire un don à Brain Canada <ArrowUpRight size={16} />
+                Soutenir la collecte Ride For Brains <ArrowUpRight size={16} />
               </a>
             </div>
             <div className="opening-bottom">
@@ -277,168 +250,41 @@ export function Home() {
             </div>
             <Scene />
             <div className="visual-caption">
-              <a href="#connexions">Comprendre le lien ↓</a>
+              <Link to="/cause">Comprendre la cause ↗</Link>
               <span>Vélo / Course / Marche</span>
             </div>
           </div>
-          <div className="movement-note">
-            <span className="small-index">Le mouvement commence</span>
-            <p>
-              Des connexions
-              <br />
-              aux kilomètres.
-            </p>
-            <span>
-              Trois façons de participer.
-              <br />
-              Un rendez-vous pour se retrouver.
-            </span>
-          </div>
         </div>
       </section>
-      <NeuralStory />
-      {heroPhoto && (
-        <div className="opening-photo">
-          <Photo photo={heroPhoto} />
-        </div>
-      )}
       <section className="editorial-section activities-narrative" id="activites">
         <div className="editorial-heading">
           <div>
-            <p className="section-index">01 / Les activités</p>
-            <h2>
-              À chacun
-              <br />
-              <em>son mouvement.</em>
-            </h2>
+            <p className="section-index">Trois façons de participer</p>
+            <h2>À chacun son mouvement.</h2>
           </div>
-          <p>
-            Une sortie de 100 kilomètres.
-            <br />
-            Une course à votre mesure.
-            <br />
-            Ou cinq kilomètres à pied.
-            <br />
-            <span className="small">Participation réservée aux 18 ans et plus.</span>
-          </p>
+          <Link to="/participants" className="text-link">
+            Voir qui prend le départ <ArrowRight size={17} />
+          </Link>
         </div>
         <SportRows />
       </section>
-      <section className="story-statement editorial-section">
-        <p className="section-index">02 / L’histoire</p>
+      <section className="home-practical">
         <div>
-          <h2>
-            Pourquoi
-            <br />
-            on se retrouve.
-          </h2>
-          <p className="editorial-lead">{s.story}</p>
-          <Link to="/equipe" className="text-link">
-            Rencontrer l’équipe <ArrowRight size={18} />
-          </Link>
+          <span>Le rendez-vous</span>
+          <strong>{eventDate(s)}</strong>
         </div>
-      </section>
-      <FirstEdition />
-      <section className="impact-editorial">
-        <div className="impact-art">
-          <Scene mode="impact" />
-          <span className="impact-marker" aria-hidden="true">
-            Les liens qui comptent.
-          </span>
-        </div>
-        <div className="impact-text">
-          <p className="section-index">03 / La cause</p>
-          <h2>
-            Avancer ensemble.
-            <br />
-            <em>Soutenir la recherche.</em>
-          </h2>
-          <p>{s.cause}</p>
-          <IdentityPair />
-          <p className="small">
-            Les dons sont effectués directement sur la plateforme officielle de Brain Canada. Les
-            inscriptions sont gérées par Ride For Brains.
-          </p>
-          <a className="button" href={s.donationUrl} target="_blank" rel="noopener noreferrer">
-            Accéder à la collecte officielle <ArrowUpRight size={18} />
-          </a>
-        </div>
-      </section>
-      <section className="editorial-section date-section">
         <div>
-          <p className="section-index">04 / Le rendez-vous</p>
-          <h2>{eventDate(s)}.</h2>
-          <CalendarLinks />
+          <span>Accueil dès</span>
+          <strong>{s.reception.replace(':', ' h ')}</strong>
         </div>
-        <dl className="date-ledger">
-          <div>
-            <dt>Accueil</dt>
-            <dd>{s.reception.replace(':', ' h ')}</dd>
-          </div>
-          <div>
-            <dt>Lieu de départ</dt>
-            <dd>{s.location || 'À confirmer'}</dd>
-          </div>
-          <div>
-            <dt>Heures de départ</dt>
-            <dd>À confirmer</dd>
-          </div>
-        </dl>
+        <div>
+          <span>Lieu</span>
+          <strong>{s.location || 'À confirmer'}</strong>
+        </div>
         <Link to="/infos" className="text-link">
-          Préparer ma journée <ArrowRight size={18} />
+          Préparer ma journée <ArrowRight size={17} />
         </Link>
       </section>
-      <ArrivalStory />
-      <section className="editorial-section home-team">
-        <div className="editorial-heading">
-          <div>
-            <p className="section-index">05 / Les personnes derrière l’événement</p>
-            <h2>
-              Une équipe.
-              <br />
-              <em>Un même rendez-vous.</em>
-            </h2>
-          </div>
-          <Link to="/equipe" className="text-link">
-            Notre histoire <ArrowRight size={18} />
-          </Link>
-        </div>
-        <TeamMotion />
-        <TeamMembers compact />
-      </section>
-      <section className="getting-involved editorial-section">
-        <p className="section-index">Faire partie de la journée</p>
-        <Link to="/benevolat">
-          <span>Sur le terrain.</span>
-          <h2>
-            Devenir bénévole <ArrowUpRight />
-          </h2>
-        </Link>
-        <Link to="/partenaires">
-          <span>À nos côtés.</span>
-          <h2>
-            Devenir partenaire <ArrowUpRight />
-          </h2>
-        </Link>
-      </section>
-      {published<any>(s.partners).length > 0 && (
-        <section className="partners-editorial editorial-section">
-          <p className="section-index">À nos côtés</p>
-          <div>
-            {published<any>(s.partners).map((p) => (
-              <a key={p.url} href={p.url} target="_blank" rel="noopener noreferrer">
-                {p.logo ? (
-                  <img src={p.logo} alt={p.name} width="200" height="90" loading="lazy" />
-                ) : (
-                  <span>{p.name}</span>
-                )}
-                {p.category && <small>{p.category}</small>}
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
-      <GatheringStory />
     </>
   );
 }
@@ -462,7 +308,7 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
             ? group.verb + '. À votre façon.'
             : 'Choisissez votre mouvement.'
       }
-      intro={eventDate(data.settings) + ' · 18 ans et plus'}
+      intro={eventDate(data.settings) + ' · ' + (kind ? ageLabel(kind) : participationPolicy)}
     >
       {kind && (
         <div className="sport-page-scene">
@@ -517,6 +363,9 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                   >
                     {full ? 'Rejoindre la liste d’attente' : 'S’inscrire'}{' '}
                     <ArrowUpRight size={17} />
+                  </Link>
+                  <Link className="text-link" to={'/participants?activite=' + a.id}>
+                    Voir les participants <ArrowRight size={15} />
                   </Link>
                   {!focus && (
                     <Link className="text-link" to={'/activites/' + a.id}>
@@ -656,6 +505,13 @@ export function Team() {
     >
       <TeamMotion />
       <TeamMembers />
+      <FirstEdition />
+      <PhotoAlbum
+        photos={published<any>(data.settings.photos).filter(
+          (p) => p.section === 'depart' || p.section === 'arrivee',
+        )}
+        label="Le départ et l’arrivée en images"
+      />
       <div className="actions">
         <Link to="/contact" className="button">
           Nous écrire <ArrowUpRight size={17} />
@@ -664,11 +520,10 @@ export function Team() {
           Donner un coup de main <ArrowRight size={17} />
         </Link>
       </div>
-      {published<any>(data.settings.photos)
-        .filter((p) => p.section === 'equipe')
-        .map((p) => (
-          <Photo key={p.url} photo={p} />
-        ))}
+      <PhotoAlbum
+        photos={published<any>(data.settings.photos).filter((p) => p.section === 'equipe')}
+        label="L’équipe en images"
+      />
     </Page>
   );
 }

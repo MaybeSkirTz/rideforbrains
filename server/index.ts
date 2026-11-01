@@ -12,6 +12,10 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { Webhook } from 'svix';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { safeReturnUrl } from '../shared/navigation';
+import { ADMIN_ACCESS_MESSAGE, STAFF_REAUTH_MESSAGE, staffHome } from '../shared/admin-access';
+import { listingConsent } from '../shared/public-participants';
+import { publicParticipantRoutes } from './public-participants';
+import { guardianRoutes, approvedGuardian } from './guardians';
 import { editorial, published } from '../shared/editorial';
 import { digest, opaqueToken, seal, unseal } from './crypto';
 import { countEvent, funnelEvents } from './analytics';
@@ -30,6 +34,8 @@ import { mailStatement, processMail } from './mail';
 import { stripe, startCheckout, handleStripeEvent, processRefunds } from './payments';
 
 export const app = new Hono<AppContext>();
+const adminApi = new Hono<AppContext>();
+const ownerApi = new Hono<AppContext>();
 const fail = (status: number, message: string): never => {
   throw new HTTPException(status as any, { message });
 };
@@ -46,14 +52,15 @@ const audit = (env: Env, actor: string, action: string, target: string, detail: 
 
 app.use('/api/*', async (c, next) =>
   bodyLimit({
-    maxSize: c.req.path === '/api/admin/media' ? 1400000 : 150000,
+    maxSize: /^\/api\/(admin|organisation)\/media$/.test(c.req.path) ? 1400000 : 150000,
     onError: (ctx) => ctx.json({ error: 'Requête trop volumineuse' }, 413),
   })(c, next),
 );
 app.use('/api/*', async (c, next) => {
   if (
     c.req.header('content-length') &&
-    Number(c.req.header('content-length')) > (c.req.path === '/api/admin/media' ? 1400000 : 150000)
+    Number(c.req.header('content-length')) >
+      (/^\/api\/(admin|organisation)\/media$/.test(c.req.path) ? 1400000 : 150000)
   )
     fail(413, 'Requête trop volumineuse');
   if (
@@ -109,16 +116,27 @@ async function actor(c: any): Promise<Actor> {
     name: session.user.name,
     role: staff?.role || 'participant',
     permissions: parse(staff?.permissions, []),
+    verifiedAt: session.passwordVerifiedAt,
   };
 }
 async function staffActor(c: any, permission: string) {
   const a = await actor(c);
+  if (!['admin', 'organizer', 'checkin'].includes(a.role)) fail(403, 'Permission insuffisante.');
   if (
     a.role !== 'admin' &&
     !a.permissions.includes(permission) &&
     !(a.role === 'checkin' && permission === 'checkin')
   )
     fail(403, 'Permission insuffisante.');
+  if (c.req.path.startsWith('/api/organisation/')) {
+    // This portal uses the site's password + one-time email code, never a caller header.
+    // Roles and permissions are read from D1 on every request, including after revocation.
+    if (!a.verifiedAt || a.verifiedAt > now() || now() - a.verifiedAt > 8 * 3600)
+      fail(401, STAFF_REAUTH_MESSAGE);
+  } else await verifyAdminAccess(c, a.email);
+  return a;
+}
+async function verifyAdminAccess(c: any, email?: string) {
   if (!isLocal(c.env)) {
     if (!c.env.ACCESS_TEAM_DOMAIN || !c.env.ACCESS_AUD)
       fail(503, 'La protection MFA de l’administration doit être configurée.');
@@ -131,13 +149,23 @@ async function staffActor(c: any, permission: string) {
         createRemoteJWKSet(new URL(`https://${domain}/cdn-cgi/access/certs`)),
         { issuer: `https://${domain}`, audience: c.env.ACCESS_AUD },
       );
-      if (String(result.payload.email).toLowerCase() !== a.email.toLowerCase()) throw new Error();
+      if (
+        !result.payload.email ||
+        (email && String(result.payload.email).toLowerCase() !== email.toLowerCase())
+      )
+        throw new Error();
     } catch {
-      fail(403, 'Connectez-vous via l’accès renforcé de l’organisation.');
+      fail(403, ADMIN_ACCESS_MESSAGE);
     }
   }
-  return a;
 }
+// A document navigation can complete Access authentication; a fetch redirect cannot.
+// This route exposes no account data. Every data route still checks the signed
+// Access identity, the application session, the same email and staff permissions.
+app.get('/api/admin/access', async (c) => {
+  await verifyAdminAccess(c);
+  return c.redirect('/admin', 302);
+});
 app.onError((e, c) => {
   if (!(e instanceof HTTPException) && !(e instanceof z.ZodError))
     console.error(
@@ -170,6 +198,18 @@ app.onError((e, c) => {
     );
   if (/PROMO_UNAVAILABLE/.test(String(e)))
     return c.json({ error: 'Code promotionnel invalide, expiré ou épuisé.' }, 409);
+  if (
+    /GUARDIAN_AUTH_REQUIRED|GUARDIAN_IDENTITY_LOCKED|registration_guardian_request/.test(String(e))
+  )
+    return c.json(
+      {
+        error:
+          'L’autorisation parentale est absente, a changé ou a déjà été utilisée. Demandez une nouvelle autorisation.',
+      },
+      409,
+    );
+  if (/ACTIVITY_AGE_RESTRICTED/.test(String(e)))
+    return c.json({ error: 'Le vélo est réservé aux personnes de 18 ans et plus.' }, 400);
   return c.json(
     { error: 'La demande n’a pas pu être traitée. Réessayez ou contactez l’organisation.' },
     500,
@@ -190,6 +230,7 @@ app.get('/api/public', async (c) => {
     },
     activities: rows.results.map((a) => ({
       ...a,
+      minimumAge: a.sport === 'velo' ? 18 : 0,
       route: parse(a.route),
       fields: parse(a.fields, []),
     })),
@@ -242,7 +283,7 @@ app.post('/api/quote', async (c) => {
   let percent = 0;
   if (x.promo) {
     const p = await c.env.DB.prepare(
-      "SELECT *, (SELECT COUNT(*) FROM visible_orders WHERE promo=promos.code AND (status IN ('confirmed','paid_review','refunding','partially_refunded','refunded') OR (status='pending' AND expires_at>unixepoch()))) AS uses FROM promos WHERE code=? AND active=1 AND (expires_at IS NULL OR expires_at>unixepoch())",
+      'SELECT *,redeemed+reserved AS uses FROM promo_usage WHERE code=? AND active=1 AND (expires_at IS NULL OR expires_at>unixepoch())',
     )
       .bind(x.promo.toUpperCase())
       .first<any>();
@@ -274,11 +315,15 @@ const draftSchema = z.object({
           phone: z.string().max(35),
           emergencyName: z.string().max(150),
           emergencyPhone: z.string().max(35),
-          adult: z.boolean(),
+          adult: z.boolean().nullable(),
+          guardianEmail: z.string().max(200).optional(),
+          guardianRequestId: z.uuid().optional(),
+          guardianStatus: z.enum(['pending', 'approved', 'declined', 'cancelled']).optional(),
           conditions: z.boolean(),
           authority: z.boolean(),
           photo: z.boolean(),
           marketing: z.boolean(),
+          publicListing: z.boolean().default(false),
           answers: z.record(z.string().max(40), z.union([z.string().max(1000), z.boolean()])),
           formVersion: z.number().int(),
         })
@@ -410,16 +455,18 @@ app.post('/api/orders', async (c) => {
   let percent = 0;
   let promo: null | string = null;
   if (input.promo) {
-    const p = await c.env.DB.prepare(
-      'SELECT * FROM promos WHERE code=? AND active=1 AND (expires_at IS NULL OR expires_at>?)',
-    )
-      .bind(input.promo.toUpperCase(), now())
+    const p = await c.env.DB.prepare('SELECT * FROM promo_usage WHERE code=?')
+      .bind(input.promo.toUpperCase())
       .first<any>();
-    if (!p) fail(400, 'Code promotionnel invalide ou expiré.');
+    if (p && p.max_uses !== null && p.redeemed + p.reserved >= p.max_uses)
+      fail(409, 'Code promotionnel épuisé ou temporairement réservé.');
+    if (!p || !p.active || (p.expires_at !== null && p.expires_at <= now()))
+      fail(400, 'Code promotionnel invalide ou expiré.');
     percent = p.percent;
     promo = p.code;
   }
   const records = [];
+  const guardianIds = new Set<string>();
   let amount = 0;
   for (const p of input.participants) {
     const activity = await c.env.DB.prepare(
@@ -428,6 +475,19 @@ app.post('/api/orders', async (c) => {
       .bind(p.activityId)
       .first<any>();
     if (!activity) fail(400, 'Activité introuvable');
+    if (!p.adult && activity.sport === 'velo')
+      fail(400, 'Le vélo est réservé aux personnes de 18 ans et plus.');
+    const guardian = await approvedGuardian(c.env, p, s.termsVersion, a.id, s.eventAt);
+    if (!p.adult && !guardian)
+      fail(
+        409,
+        'Le parent doit autoriser cette participation depuis son propre compte avant l’inscription ou le paiement.',
+      );
+    if (guardian) {
+      if (guardianIds.has(guardian.id))
+        fail(400, 'Chaque participation mineure doit avoir sa propre autorisation parentale.');
+      guardianIds.add(guardian.id);
+    }
     if (
       (activity.opens_at && activity.opens_at > now()) ||
       (activity.closes_at && activity.closes_at <= now())
@@ -443,7 +503,7 @@ app.post('/api/orders', async (c) => {
     }
     const price = Math.round((activity.price * (100 - percent)) / 100);
     amount += price;
-    records.push({ p, activity, answers, price, id: uuid(), ticket: uuid() + uuid() });
+    records.push({ p, activity, answers, price, guardian, id: uuid(), ticket: uuid() + uuid() });
   }
   if (input.expectedAmount !== undefined && input.expectedAmount !== amount)
     fail(
@@ -482,9 +542,15 @@ app.post('/api/orders', async (c) => {
   ];
   for (const r of records) {
     const { p, activity } = r;
+    if (r.guardian)
+      stmts.push(
+        c.env.DB.prepare(
+          "UPDATE guardian_requests SET used_order_id=? WHERE id=? AND status='approved' AND fingerprint=? AND used_order_id IS NULL AND expires_at>?",
+        ).bind(id, r.guardian.id, r.guardian.fingerprint, now()),
+      );
     stmts.push(
       c.env.DB.prepare(
-        'INSERT INTO registrations(id,order_id,activity_id,first_name,last_name,email,phone,adult,emergency_name,emergency_phone,answers,form_snapshot,form_version,conditions_version,conditions_snapshot,photo,marketing,price,status,expires_at,ticket,activity_snapshot) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO registrations(id,order_id,activity_id,first_name,last_name,email,phone,adult,emergency_name,emergency_phone,answers,form_snapshot,form_version,conditions_version,conditions_snapshot,photo,marketing,price,status,expires_at,ticket,activity_snapshot,is_minor,guardian_request_id,guardian_snapshot,public_listing,public_listing_consent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ).bind(
         r.id,
         id,
@@ -508,6 +574,18 @@ app.post('/api/orders', async (c) => {
         expires,
         r.ticket,
         json({ name: activity.name, distance: activity.distance, sport: activity.sport }),
+        p.adult ? 0 : 1,
+        r.guardian?.id || null,
+        r.guardian
+          ? json({
+              ...parse(r.guardian.consent_snapshot),
+              requestId: r.guardian.id,
+              participant: parse(r.guardian.payload),
+              activity: parse(r.guardian.activity_snapshot),
+            })
+          : null,
+        p.publicListing ? 1 : 0,
+        p.publicListing ? listingConsent(a.id, r.guardian?.id) : null,
       ),
     );
     if (amount === 0)
@@ -526,6 +604,7 @@ app.post('/api/orders', async (c) => {
   stmts.push(audit(c.env, a.id, 'order.created', id, { amount, count: records.length }));
   stmts.push(c.env.DB.prepare('DELETE FROM drafts WHERE user_id=?').bind(a.id));
   await c.env.DB.batch(stmts);
+  if (amount === 0) c.executionCtx.waitUntil(processMail(c.env));
   return c.json({ id, status, amount }, 201);
 });
 app.post('/api/orders/:id/checkout', async (c) => {
@@ -560,6 +639,7 @@ app.get('/api/registrations', async (c) => {
   return c.json({
     registrations: rows.map(({ notes, ...r }) => ({
       ...r,
+      adult: !r.is_minor,
       activity_name: parse(r.activity_snapshot).name || r.activity_name,
       distance: parse(r.activity_snapshot).distance || r.distance,
       answers: parse(r.answers),
@@ -675,6 +755,8 @@ app.post('/api/waitlist', async (c) => {
     .bind(p.activityId)
     .first<any>();
   if (!activity) fail(404, 'Activité introuvable');
+  if (!p.adult && activity.sport === 'velo')
+    fail(400, 'Le vélo est réservé aux personnes de 18 ans et plus.');
   const occupied = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM visible_registrations WHERE activity_id=? AND (status IN ('confirmed','partially_refunded','refunding') OR (status='pending' AND expires_at>unixepoch()))",
   )
@@ -688,8 +770,18 @@ app.post('/api/waitlist', async (c) => {
       "INSERT INTO orders(id,user_id,request_key,amount,status,expires_at) VALUES(?,?,?,0,'draft',?)",
     ).bind(id, a.id, uuid(), now()),
     c.env.DB.prepare(
-      "INSERT INTO registrations(id,order_id,activity_id,first_name,last_name,email,phone,adult,emergency_name,emergency_phone,answers,form_snapshot,form_version,conditions_version,conditions_snapshot,photo,marketing,price,status,expires_at,ticket) VALUES(?,?,?,?,?,?,'',1,'','','{}','[]',0,'waitlist','Attente sans réservation ni paiement',0,0,0,'waitlisted',?,?)",
-    ).bind(uuid(), id, p.activityId, p.firstName, p.lastName, a.email, now(), uuid() + uuid()),
+      "INSERT INTO registrations(id,order_id,activity_id,first_name,last_name,email,phone,adult,emergency_name,emergency_phone,answers,form_snapshot,form_version,conditions_version,conditions_snapshot,photo,marketing,price,status,expires_at,ticket,is_minor) VALUES(?,?,?,?,?,?,'',1,'','','{}','[]',0,'waitlist','Attente sans réservation ni paiement',0,0,0,'waitlisted',?,?,?)",
+    ).bind(
+      uuid(),
+      id,
+      p.activityId,
+      p.firstName,
+      p.lastName,
+      a.email,
+      now(),
+      uuid() + uuid(),
+      p.adult ? 0 : 1,
+    ),
     audit(c.env, a.id, 'waitlist.joined', id),
   ]);
   return c.json({ ok: true });
@@ -700,7 +792,7 @@ function participantWaitlist(x: unknown) {
       activityId: z.string().max(50),
       firstName: z.string().min(1).max(150),
       lastName: z.string().min(1).max(150),
-      adult: z.literal(true),
+      adult: z.boolean(),
     })
     .parse(x);
 }
@@ -727,7 +819,7 @@ app.post('/api/submissions', async (c) => {
   );
 });
 
-app.get('/api/admin/overview', async (c) => {
+adminApi.get('/overview', async (c) => {
   await staffActor(c, 'participants');
   const stats = await c.env.DB.prepare(
     'SELECT a.id,a.name,a.distance,a.capacity,r.status,COUNT(r.id) AS count,SUM(CASE WHEN r.checked_at IS NOT NULL THEN 1 ELSE 0 END) AS present FROM activities a LEFT JOIN visible_registrations r ON r.activity_id=a.id GROUP BY a.id,r.status',
@@ -742,7 +834,7 @@ app.get('/api/admin/overview', async (c) => {
   ).results;
   return c.json({ stats: stats.results, money, alerts });
 });
-app.get('/api/admin/participants', async (c) => {
+adminApi.get('/participants', async (c) => {
   await staffActor(c, 'participants');
   const page = Math.max(1, Number(c.req.query('page')) || 1),
     q = (c.req.query('q') || '').slice(0, 100),
@@ -775,7 +867,7 @@ app.get('/api/admin/participants', async (c) => {
     .all();
   return c.json({ rows: rows.results, total: total.count, page });
 });
-app.get('/api/admin/participants/:id', async (c) => {
+adminApi.get('/participants/:id', async (c) => {
   await staffActor(c, 'participants');
   const r = await c.env.DB.prepare('SELECT * FROM visible_registrations WHERE id=?')
     .bind(c.req.param('id'))
@@ -783,7 +875,9 @@ app.get('/api/admin/participants/:id', async (c) => {
   if (!r) fail(404, 'Dossier introuvable');
   return c.json({
     ...r,
+    adult: !r.is_minor,
     answers: parse(r.answers),
+    guardian: r.guardian_snapshot ? parse(r.guardian_snapshot) : null,
     fields: parse(r.form_snapshot, []),
     history: (
       await c.env.DB.prepare('SELECT * FROM history WHERE registration_id=? ORDER BY at,id')
@@ -795,7 +889,7 @@ app.get('/api/admin/participants/:id', async (c) => {
       .first(),
   });
 });
-app.patch('/api/admin/participants/:id', async (c) => {
+adminApi.patch('/participants/:id', async (c) => {
   const a = await staffActor(c, 'participants');
   const id = c.req.param('id');
   const x = z
@@ -814,6 +908,9 @@ app.patch('/api/admin/participants/:id', async (c) => {
     fail(404, 'Dossier introuvable');
   await c.env.DB.batch([
     c.env.DB.prepare(
+      'UPDATE registrations SET public_listing=0 WHERE id=? AND (COALESCE(?,first_name)!=first_name OR COALESCE(?,last_name)!=last_name)',
+    ).bind(id, x.first_name ?? null, x.last_name ?? null),
+    c.env.DB.prepare(
       'UPDATE registrations SET ' +
         Object.keys(x)
           .map((k) => k + '=?')
@@ -824,7 +921,7 @@ app.patch('/api/admin/participants/:id', async (c) => {
   ]);
   return c.json({ ok: true });
 });
-app.get('/api/admin/export', async (c) => {
+adminApi.get('/export', async (c) => {
   const a = await staffActor(c, 'export');
   const rs = (
     await c.env.DB.prepare(
@@ -860,7 +957,7 @@ app.get('/api/admin/export', async (c) => {
     },
   );
 });
-app.post('/api/admin/refunds', async (c) => {
+adminApi.post('/refunds', async (c) => {
   const a = await staffActor(c, 'refunds');
   const body = z
     .object({
@@ -899,7 +996,17 @@ app.post('/api/admin/refunds', async (c) => {
   c.executionCtx.waitUntil(processRefunds(c.env));
   return c.json({ status: 'queued', id });
 });
-app.get('/api/admin/config', async (c) => {
+const readPromos = async (env: Env) =>
+  (
+    await env.DB.prepare(
+      "SELECT *,CASE WHEN max_uses IS NOT NULL AND redeemed>=max_uses THEN 'exhausted' WHEN expires_at IS NOT NULL AND expires_at<=unixepoch() THEN 'expired' WHEN active=0 THEN 'disabled' WHEN max_uses IS NOT NULL AND redeemed+reserved>=max_uses THEN 'reserved' ELSE 'active' END AS state FROM promo_usage ORDER BY code",
+    ).all()
+  ).results;
+adminApi.get('/promos', async (c) => {
+  await staffActor(c, 'event');
+  return c.json(await readPromos(c.env));
+});
+adminApi.get('/config', async (c) => {
   await staffActor(c, 'event');
   return c.json({
     settings: await settings(c.env),
@@ -911,10 +1018,10 @@ app.get('/api/admin/config', async (c) => {
     forms: (
       await c.env.DB.prepare('SELECT * FROM forms ORDER BY activity_id,version DESC').all<any>()
     ).results.map((f) => ({ ...f, fields: parse(f.fields, []) })),
-    promos: (await c.env.DB.prepare('SELECT * FROM promos').all()).results,
+    promos: await readPromos(c.env),
   });
 });
-app.put('/api/admin/settings', async (c) => {
+adminApi.put('/settings', async (c) => {
   const a = await staffActor(c, 'event');
   const body = z
     .object({ settings: settingsSchema, revision: z.number().int() })
@@ -948,7 +1055,7 @@ app.put('/api/admin/settings', async (c) => {
   await audit(c.env, a.id, 'settings.updated', 'event', { revision: body.revision + 1 }).run();
   return c.json(updated);
 });
-app.put('/api/admin/activities', async (c) => {
+adminApi.put('/activities', async (c) => {
   const a = await staffActor(c, 'event');
   const x = activitySchema.parse(await c.req.json());
   if (x.capacity !== null) {
@@ -978,7 +1085,7 @@ app.put('/api/admin/activities', async (c) => {
   ]);
   return c.json({ ok: true });
 });
-app.post('/api/admin/forms', async (c) => {
+adminApi.post('/forms', async (c) => {
   const a = await staffActor(c, 'event');
   const x = z
     .object({
@@ -1015,7 +1122,7 @@ app.post('/api/admin/forms', async (c) => {
   ]);
   return c.json({ version });
 });
-app.put('/api/admin/promos', async (c) => {
+adminApi.put('/promos', async (c) => {
   const a = await staffActor(c, 'event');
   const x = z
     .object({
@@ -1026,6 +1133,11 @@ app.put('/api/admin/promos', async (c) => {
       active: z.boolean(),
     })
     .parse(await c.req.json());
+  const previous = await c.env.DB.prepare('SELECT redeemed FROM promo_usage WHERE code=?')
+    .bind(x.code)
+    .first<any>();
+  if (x.active && x.maxUses !== null && previous && previous.redeemed >= x.maxUses)
+    fail(409, 'Ce code est épuisé. Augmentez sa limite pour le réactiver.');
   await c.env.DB.batch([
     c.env.DB.prepare(
       'INSERT INTO promos(code,percent,max_uses,expires_at,active) VALUES(?,?,?,?,?) ON CONFLICT(code) DO UPDATE SET percent=excluded.percent,max_uses=excluded.max_uses,expires_at=excluded.expires_at,active=excluded.active',
@@ -1034,7 +1146,7 @@ app.put('/api/admin/promos', async (c) => {
   ]);
   return c.json({ ok: true });
 });
-app.get('/api/admin/staff', async (c) => {
+ownerApi.get('/staff', async (c) => {
   const a = await staffActor(c, 'staff');
   if (a.role !== 'admin') fail(403, 'Administrateur principal requis');
   return c.json(
@@ -1045,7 +1157,7 @@ app.get('/api/admin/staff', async (c) => {
     ).results,
   );
 });
-app.put('/api/admin/staff', async (c) => {
+ownerApi.put('/staff', async (c) => {
   const a = await staffActor(c, 'staff');
   if (a.role !== 'admin') fail(403, 'Administrateur principal requis');
   const x = z
@@ -1077,9 +1189,50 @@ app.put('/api/admin/staff', async (c) => {
     ).bind(u.id, x.role, json(x.role === 'checkin' ? ['checkin'] : x.permissions)),
     audit(c.env, a.id, 'staff.updated', u.id, { role: x.role, permissions: x.permissions }),
   ]);
-  return c.json({ ok: true });
+  return c.json({ ok: true, portal: staffHome(x.role) });
 });
-app.get('/api/admin/checkin/search', async (c) => {
+ownerApi.delete('/staff/:id', async (c) => {
+  const a = await staffActor(c, 'staff');
+  if (a.role !== 'admin') fail(403, 'Administrateur principal requis');
+  z.object({ confirm: z.literal(true) })
+    .strict()
+    .parse(await c.req.json());
+  const id = z.string().min(1).max(200).parse(c.req.param('id'));
+  if (id === a.id) fail(409, 'Vous ne pouvez pas retirer votre propre accès administrateur.');
+  const target = await c.env.DB.prepare('SELECT role,permissions FROM staff WHERE user_id=?')
+    .bind(id)
+    .first<any>();
+  if (!target) return c.json({ ok: true, alreadyRevoked: true });
+  const results = await c.env.DB.batch([
+    // Check the acting administrator again inside the atomic write. Two admins
+    // removing each other concurrently must not leave the site without an admin.
+    c.env.DB.prepare(
+      "DELETE FROM staff WHERE user_id=? AND role=? AND permissions=? AND EXISTS(SELECT 1 FROM staff actor WHERE actor.user_id=? AND actor.role='admin') RETURNING user_id",
+    ).bind(id, target.role, target.permissions, a.id),
+    c.env.DB.prepare(
+      "INSERT INTO audit(id,actor,action,target,detail) SELECT ?,?,'staff.revoked',?,? WHERE changes()=1",
+    ).bind(
+      uuid(),
+      a.id,
+      id,
+      json({ role: target.role, permissions: parse(target.permissions, []) }),
+    ),
+    c.env.DB.prepare(
+      'UPDATE offline_snapshots SET revoked=1 WHERE staff_id=? AND revoked=0 AND NOT EXISTS(SELECT 1 FROM staff WHERE user_id=?)',
+    ).bind(id, id),
+  ]);
+  if (!results[0].meta.changes) {
+    const current = await c.env.DB.prepare('SELECT role FROM staff WHERE user_id=?')
+      .bind(a.id)
+      .first<any>();
+    if (current?.role !== 'admin') fail(403, 'Votre accès administrateur a été retiré.');
+    if (await c.env.DB.prepare('SELECT 1 FROM staff WHERE user_id=?').bind(id).first())
+      fail(409, 'Les accès de cette personne ont changé. Actualisez la liste avant de réessayer.');
+    return c.json({ ok: true, alreadyRevoked: true });
+  }
+  return c.json({ ok: true, alreadyRevoked: false });
+});
+adminApi.get('/checkin/search', async (c) => {
   await staffActor(c, 'checkin');
   const q = (c.req.query('q') || '').trim().slice(0, 100);
   if (q.length < 2) return c.json([]);
@@ -1093,7 +1246,7 @@ app.get('/api/admin/checkin/search', async (c) => {
     ).results,
   );
 });
-app.post('/api/admin/checkin', async (c) => {
+adminApi.post('/checkin', async (c) => {
   const a = await staffActor(c, 'checkin');
   const x = z
     .object({ ticket: z.string().min(20).max(100), undo: z.boolean().optional() })
@@ -1115,14 +1268,14 @@ app.post('/api/admin/checkin', async (c) => {
   await audit(c.env, a.id, x.undo ? 'checkin.undone' : 'checkin.recorded', (r as any).id).run();
   return c.json(r);
 });
-app.get('/api/admin/submissions', async (c) => {
+adminApi.get('/submissions', async (c) => {
   await staffActor(c, 'submissions');
   return c.json(
     (await c.env.DB.prepare('SELECT * FROM submissions ORDER BY created_at DESC LIMIT 200').all())
       .results,
   );
 });
-app.patch('/api/admin/submissions/:id', async (c) => {
+adminApi.patch('/submissions/:id', async (c) => {
   const a = await staffActor(c, 'submissions');
   const row = await c.env.DB.prepare('SELECT kind,details,stage,status FROM submissions WHERE id=?')
     .bind(c.req.param('id'))
@@ -1176,21 +1329,21 @@ app.patch('/api/admin/submissions/:id', async (c) => {
   ]);
   return c.json({ ok: true });
 });
-app.get('/api/admin/mail', async (c) => {
+adminApi.get('/mail', async (c) => {
   await staffActor(c, 'communications');
   return c.json(
     (
       await c.env.DB.prepare(
-        "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND kind!='login' AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
+        "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND kind NOT IN ('login','guardian') AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
       ).all()
     ).results,
   );
 });
-app.get('/api/admin/templates', async (c) => {
+adminApi.get('/templates', async (c) => {
   await staffActor(c, 'communications');
   return c.json((await c.env.DB.prepare('SELECT * FROM templates ORDER BY name').all()).results);
 });
-app.put('/api/admin/templates', async (c) => {
+adminApi.put('/templates', async (c) => {
   const a = await staffActor(c, 'communications');
   const x = z
     .object({
@@ -1247,7 +1400,7 @@ const mailInput = z.object({
   expectedCount: z.number().int().optional(),
   confirm: z.boolean().optional(),
 });
-app.post('/api/admin/mail/preview', async (c) => {
+adminApi.post('/mail/preview', async (c) => {
   await staffActor(c, 'communications');
   const x = mailInput.parse(await c.req.json());
   const rows = await recipients(c.env, x);
@@ -1259,13 +1412,25 @@ app.post('/api/admin/mail/preview', async (c) => {
     ),
   });
 });
+adminApi.post('/mail/process', async (c) => {
+  const a = await staffActor(c, 'communications');
+  z.object({ confirm: z.literal(true) })
+    .strict()
+    .parse(await c.req.json());
+  await limited(c.env, 'mail-process:' + a.id, 3, 60);
+  if (!isLocal(c.env) && !(c.env.RESEND_API_KEY && c.env.MAIL_FROM))
+    fail(503, 'Le service de courriel doit être configuré.');
+  await processMail(c.env);
+  await audit(c.env, a.id, 'mail.queue_processed', 'outbox').run();
+  return c.json({ status: isLocal(c.env) ? 'development' : 'processed' });
+});
 function renderMail(text: string, r: any) {
   return text
     .replace(/\{\{prenom\}\}/g, r.first_name)
     .replace(/\{\{activite\}\}/g, r.activity_name)
     .replace(/\{\{numero\}\}/g, r.id);
 }
-app.post('/api/admin/mail', async (c) => {
+adminApi.post('/mail', async (c) => {
   const a = await staffActor(c, 'communications');
   const x = mailInput.parse(await c.req.json());
   const rows = await recipients(c.env, x);
@@ -1325,14 +1490,14 @@ app.post('/api/unsubscribe', async (c) => {
     .run();
   return c.json({ ok: true });
 });
-app.get('/api/admin/audit', async (c) => {
+ownerApi.get('/audit', async (c) => {
   const a = await staffActor(c, 'staff');
   if (a.role !== 'admin') fail(403, 'Administrateur principal requis');
   return c.json(
     (await c.env.DB.prepare('SELECT * FROM audit ORDER BY at DESC LIMIT 200').all()).results,
   );
 });
-app.post('/api/admin/resend/:id', async (c) => {
+adminApi.post('/resend/:id', async (c) => {
   const a = await staffActor(c, 'communications');
   const r = await c.env.DB.prepare(
     "SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
@@ -1352,6 +1517,7 @@ app.post('/api/admin/resend/:id', async (c) => {
     ),
     audit(c.env, a.id, 'confirmation.queued', r.id),
   ]);
+  c.executionCtx.waitUntil(processMail(c.env));
   return c.json({ status: isLocal(c.env) ? 'development' : 'queued' });
 });
 app.get('/api/account/export', async (c) => {
@@ -1362,7 +1528,7 @@ app.get('/api/account/export', async (c) => {
     )
       .bind(a.id)
       .all<any>()
-  ).results.map(({ notes, ticket, ...r }) => r);
+  ).results.map(({ notes, ticket, ...r }) => ({ ...r, adult: !r.is_minor }));
   await audit(c.env, a.id, 'account.exported', a.id).run();
   return c.json({ account: { name: a.name, email: a.email }, registrations: regs });
 });
@@ -1398,6 +1564,7 @@ app.post('/api/webhooks/stripe', async (c) => {
     fail(400, 'Signature Stripe invalide');
   }
   await handleStripeEvent(c.env, event!);
+  c.executionCtx.waitUntil(processMail(c.env));
   return c.json({ received: true });
 });
 app.post('/api/webhooks/resend', async (c) => {
@@ -1427,9 +1594,14 @@ app.post('/api/webhooks/resend', async (c) => {
   return c.json({ ok: true });
 });
 transferRoutes(app, { actor, settings, audit, fail, limited });
-offlineRoutes(app, { staffActor, audit, fail });
-orderRemovalRoutes(app, { staffActor, settings, audit, fail, limited });
-extensions(app, { actor, staffActor, settings, audit, fail, limited });
+guardianRoutes(app, { actor, settings, audit, fail, limited });
+publicParticipantRoutes(app, { actor, audit, fail, limited });
+offlineRoutes(adminApi, { staffActor, audit, fail });
+orderRemovalRoutes(ownerApi, { staffActor, settings, audit, fail, limited });
+extensions(app, { actor, staffActor, settings, audit, fail, limited }, adminApi);
+app.route('/api/admin', ownerApi);
+app.route('/api/admin', adminApi);
+app.route('/api/organisation', adminApi);
 app.all('/api/*', (c) => c.json({ error: 'Route introuvable' }, 404));
 app.get('*', async (c) => {
   const res = await publicDocument(c.req.raw, c.env);
@@ -1442,26 +1614,41 @@ app.get('*', async (c) => {
   return new Response(res.body, { status: res.status, headers });
 });
 export async function scheduled(env: Env) {
-  await env.DB.batch([
-    env.DB.prepare(
-      "UPDATE registrations SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
-    ),
-    env.DB.prepare(
-      "UPDATE orders SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
-    ),
-    env.DB.prepare('DELETE FROM rate_limits WHERE reset_at<unixepoch()-86400'),
-    env.DB.prepare('DELETE FROM verification WHERE expiresAt<?').bind(Date.now() - 86400000),
-    env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at<unixepoch()-86400'),
-    env.DB.prepare('DELETE FROM session WHERE expiresAt<?').bind(Date.now() - 86400000),
-    env.DB.prepare('DELETE FROM guest_drafts WHERE expires_at<unixepoch()'),
-    env.DB.prepare(
-      "UPDATE registration_transfers SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
-    ),
-  ]);
-  await closeRemovedCheckouts(env);
-  await processRefunds(env);
-  await processMail(env);
+  const tasks = [
+    [
+      'cleanup',
+      async () => {
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE registrations SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
+          ),
+          env.DB.prepare(
+            "UPDATE orders SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
+          ),
+          env.DB.prepare('DELETE FROM rate_limits WHERE reset_at<unixepoch()-86400'),
+          env.DB.prepare('DELETE FROM verification WHERE expiresAt<?').bind(Date.now() - 86400000),
+          env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at<unixepoch()-86400'),
+          env.DB.prepare('DELETE FROM session WHERE expiresAt<?').bind(Date.now() - 86400000),
+          env.DB.prepare('DELETE FROM guest_drafts WHERE expires_at<unixepoch()'),
+          env.DB.prepare(
+            "UPDATE registration_transfers SET status='expired' WHERE status='pending' AND expires_at<unixepoch()",
+          ),
+        ]);
+      },
+    ],
+    ['checkout_cleanup', () => closeRemovedCheckouts(env)],
+    ['refunds', () => processRefunds(env)],
+    ['mail', () => processMail(env)],
+  ] as const;
+  const results = await Promise.allSettled(tasks.map(([, run]) => run()));
+  const failures = results.flatMap((r, i) => (r.status === 'rejected' ? [tasks[i][0]] : []));
+  for (const step of failures)
+    console.error(
+      JSON.stringify({ event: 'maintenance_step_failed', step, code: 'MAINTENANCE_ERROR' }),
+    );
+  if (failures.length) throw new Error('Maintenance steps failed: ' + failures.join(','));
 }
+
 export default {
   fetch: app.fetch,
   scheduled: (_controller: ScheduledController, env: Env, ctx: ExecutionContext) =>

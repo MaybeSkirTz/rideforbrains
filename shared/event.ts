@@ -1,5 +1,8 @@
+export const donationDestination =
+  'Les dons sont effectués sur la page de collecte Ride For Brains, hébergée sur la plateforme officielle de collecte de fonds de Brain Canada.';
 export const donationNotice =
-  'Les frais d’inscription servent à l’inscription et à l’organisation de Ride For Brains. Ils ne constituent pas un don à Brain Canada et ne donnent pas droit à un reçu de don. Les dons à Brain Canada sont effectués séparément sur sa plateforme officielle.';
+  'Les frais d’inscription servent à l’inscription et à l’organisation de Ride For Brains. Ils ne constituent pas un don à Brain Canada et ne donnent pas droit à un reçu de don. ' +
+  donationDestination;
 
 export function daysUntil(eventAt: string, now = new Date()) {
   const day = (date: Date) => {
