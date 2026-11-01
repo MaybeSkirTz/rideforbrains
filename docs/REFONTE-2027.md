@@ -1,5 +1,7 @@
 # Refonte 2027 — livraison et configuration
 
+> Document historique de la première refonte. Pour l’état actuel, consulter la [livraison du 1er novembre 2026](LIVRAISON-NOVEMBRE-2026.md). Le fonctionnement confirmé est désormais **mot de passe et code à six chiffres**, vélo 18+, mineurs à la course/marche avec autorisation parentale, tarifs existants conservés, cartes sur le GPX publié et accueil limité à trois sections. Les anciennes descriptions de liens de connexion, carte SVG et onze emplacements à l’accueil ci-dessous ne décrivent plus l’interface actuelle.
+
 Branche `codex/refonte-experience-2027`, à partir du site existant (`40022a4`). Le projet, le domaine, les intégrations et les cinq migrations précédentes ont été conservés. Cette refonte n’est pas un nouveau projet.
 
 ## Changements livrés

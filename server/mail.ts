@@ -1,5 +1,6 @@
 import type { Env } from './types';
 import { isLocal, uuid, now } from './types';
+import { digest } from './crypto';
 
 export function mailStatement(
   env: Env,
@@ -101,6 +102,22 @@ export async function processMail(env: Env) {
       continue;
     }
     try {
+      const ticketToken = row.body.match(/\/billet-personnel#([a-f0-9]{64})/);
+      if (
+        ticketToken &&
+        !(await env.DB.prepare(
+          "SELECT 1 FROM participant_ticket_access p JOIN visible_registrations r ON r.id=p.registration_id WHERE p.registration_id=? AND p.token_hash=? AND p.revoked_at IS NULL AND p.recipient=? AND r.email=p.recipient AND r.status IN ('confirmed','partially_refunded')",
+        )
+          .bind(row.registration_id, await digest(ticketToken[1]), row.recipient)
+          .first())
+      ) {
+        await env.DB.prepare(
+          "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Lien de billet expiré ou révoqué' WHERE id=?",
+        )
+          .bind(row.id)
+          .run();
+        continue;
+      }
       if (
         row.registration_id &&
         !(await env.DB.prepare('SELECT id FROM visible_registrations WHERE id=?')

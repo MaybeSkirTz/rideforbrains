@@ -10,6 +10,7 @@ const sponsor = [
   ['notes', 'Notes privées'],
 ];
 const volunteer = [
+  ['preferredRole', 'Rôle souhaité par le candidat'],
   ['phone', 'Téléphone'],
   ['availability', 'Disponibilités'],
   ['role', 'Rôle'],

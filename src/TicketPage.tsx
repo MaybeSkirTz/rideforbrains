@@ -3,29 +3,47 @@ import { api } from './api';
 import { useApp } from './context';
 import { Page, Link, Notice, Button } from './ui';
 import { accountUrl } from '../shared/navigation';
+import { googleCalendarUrl, calendarICS } from '../shared/event';
+import useFragmentToken from './useFragmentToken';
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
-export default function TicketPage({ id }: { id: string }) {
+export default function TicketPage({ id, personal = false }: { id: string; personal?: boolean }) {
   const { user } = useApp();
+  const fragment = useFragmentToken(),
+    token = personal ? fragment : '';
   const [ticket, setTicket] = useState<any>(),
     [error, setError] = useState('');
   useEffect(() => {
-    if (!user) return;
-    api('/registrations/' + id + '/ticket')
+    setError('');
+    setTicket(undefined);
+    if (!personal && !user) return;
+    const controller = new AbortController();
+    api(
+      personal ? '/tickets/view' : '/registrations/' + id + '/ticket',
+      personal ? { token } : undefined,
+      personal ? 'POST' : 'GET',
+      { signal: controller.signal },
+    )
       .then(async (t) => {
         const QR = await import('qrcode');
+        const image = await QR.toDataURL(t.ticket, { width: 600, margin: 3 }),
+          svg = await QR.toString(t.ticket, { type: 'svg', margin: 3 });
+        if (controller.signal.aborted) return;
         setTicket({
           ...t,
-          image: await QR.toDataURL(t.ticket, { width: 600, margin: 3 }),
-          svg: await QR.toString(t.ticket, { type: 'svg', margin: 3 }),
+          image,
+          svg,
         });
       })
-      .catch((e) => setError(e.message));
-  }, [id, user]);
-  if (!user)
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e.message);
+      });
+    return () => controller.abort();
+  }, [id, user, personal, token]);
+  if (!personal && !user)
     return (
       <Page title="Votre billet personnel.">
         <Link className="button" to={accountUrl('/billet/' + id)}>
@@ -59,7 +77,19 @@ export default function TicketPage({ id }: { id: string }) {
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'Ride-For-Brains-' + id.slice(0, 8) + '.svg';
+    a.download = 'Ride-For-Brains-' + ticket.id.slice(0, 8) + '.svg';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const downloadCalendar = () => {
+    const url = URL.createObjectURL(
+      new Blob([calendarICS({ ...event, title: 'Ride For Brains' }, location.origin)], {
+        type: 'text/calendar;charset=utf-8',
+      }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Ride-For-Brains.ics';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -80,6 +110,7 @@ export default function TicketPage({ id }: { id: string }) {
         <p className="ticket-name">
           {ticket.first_name} {ticket.last_name}
         </p>
+        <p className="status confirmed">Inscription confirmée</p>
         <img
           className="ticket-qr"
           src={ticket.image}
@@ -109,6 +140,19 @@ export default function TicketPage({ id }: { id: string }) {
           <Button className="button light" onClick={() => window.print()}>
             Imprimer / enregistrer en PDF
           </Button>
+          {event.eventAt && (
+            <a
+              className="text-link"
+              href={googleCalendarUrl({ ...event, title: 'Ride For Brains' }, location.origin)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Ajouter au calendrier
+            </a>
+          )}
+          <button className="text-link" onClick={downloadCalendar}>
+            Calendrier (.ics)
+          </button>
           <Link className="text-link" to="/espace">
             Mon espace
           </Link>

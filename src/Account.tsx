@@ -5,8 +5,10 @@ import { Page, Link, Button, Field, Notice, go } from './ui';
 import { api, saveSessionPreference } from './api';
 import { safeReturnUrl } from '../shared/navigation';
 import Turnstile from './Turnstile';
+import { track } from './tracking';
 type Mode = 'create' | 'sign-in' | 'password';
 export default function Account() {
+  useEffect(() => track('account_step'), []);
   const { data, user, refresh } = useApp(),
     params = new URLSearchParams(location.search);
   const initial = params.get('mode');

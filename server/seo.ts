@@ -34,21 +34,21 @@ const pages: Record<string, [string, string]> = {
     'Questions fréquentes',
     'Les réponses de l’organisation pour préparer votre participation.',
   ],
-  '/benevoles': ['Devenir bénévole', 'Proposez votre aide pour Ride For Brains.'],
+  '/benevolat': ['Devenir bénévole', 'Proposez votre aide pour Ride For Brains.'],
   '/partenaires': ['Devenir partenaire', 'Contactez l’organisation pour soutenir l’événement.'],
 };
 export async function publicDocument(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url),
     originalPath = url.pathname;
   const aliases: Record<string, string> = {
-    '/benevolat': '/benevoles',
+    '/benevoles': '/benevolat',
     '/parcours': '/infos',
     '/annulation': '/conditions',
   };
   const path = aliases[originalPath] || originalPath;
   if (path === '/robots.txt')
     return new Response(
-      `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /connexion\nDisallow: /compte\nDisallow: /espace\nDisallow: /inscription\nDisallow: /billet/\nDisallow: /transfert\nSitemap: ${env.APP_URL}/sitemap.xml\n`,
+      `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /organisation\nDisallow: /api/\nDisallow: /connexion\nDisallow: /compte\nDisallow: /espace\nDisallow: /inscription\nDisallow: /attente\nDisallow: /billet\nDisallow: /recu\nDisallow: /confirmer-courriel\nDisallow: /autorisations-parentales\nDisallow: /transfert\nSitemap: ${env.APP_URL}/sitemap.xml\n`,
       { headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
     );
   const htmlPage = path === '/' || !path.split('/').pop()?.includes('.');
@@ -88,7 +88,7 @@ export async function publicDocument(request: Request, env: Env): Promise<Respon
     ? activities.find((a) => path === '/activites/' + a.id)
     : null;
   const privatePage =
-    /^\/(admin|organisation|api|connexion|compte|espace|inscription|attente|billet|transfert|autorisations-parentales|desabonnement|courriels-locaux)(\/|$)/.test(
+    /^\/(admin|organisation|api|connexion|compte|espace|inscription|attente|billet|billet-personnel|recu|confirmer-courriel|transfert|autorisations-parentales|desabonnement|courriels-locaux)(\/|$)/.test(
       path,
     );
   const known =
@@ -106,8 +106,12 @@ export async function publicDocument(request: Request, env: Env): Promise<Respon
     timeZone: 'America/Toronto',
   }).format(new Date(s.eventAt));
   const title = activity
-    ? `${({ velo: 'Vélo', course: 'Course', marche: 'Marche' } as any)[activity.sport]} · ${activity.name} · ${activity.distance} · ${price}`
+    ? `${({ velo: 'Vélo', course: 'Course', marche: 'Marche' } as any)[activity.sport]} — ${activity.distance} · ${activity.name} · ${price}`
     : pages[path]?.[0] || 'Ride For Brains';
+  const pageTitle =
+    path === '/'
+      ? `${s.title || 'Ride For Brains'} — Vélo, course et marche · ${date}`
+      : `${title} — Ride For Brains`;
   const description = activity
     ? `${activity.name}, ${activity.distance}, le ${date}. ${price} CAD par participation. ${ageLabel(activity.sport)}. Frais d’inscription distincts des dons.`
     : `${pages[path]?.[1] || 'Ride For Brains.'} ${s.edition} · ${date} · Accueil à ${s.reception.replace(':', ' h ')}.`;
@@ -128,6 +132,7 @@ export async function publicDocument(request: Request, env: Env): Promise<Respon
     eventAttendanceMode: 'https://schema.org/OfflineEventAttendanceMode',
     url: env.APP_URL,
     image: [image],
+    organizer: { '@type': 'Organization', '@id': env.APP_URL + '/#organization' },
     ...(s.location ? { location: { '@type': 'Place', name: s.location } } : {}),
     offers: activities.map((a) => ({
       '@type': 'Offer',
@@ -137,14 +142,50 @@ export async function publicDocument(request: Request, env: Env): Promise<Respon
       url: env.APP_URL + '/activites/' + a.id,
     })),
   };
+  const organization = {
+    '@type': 'Organization',
+    '@id': env.APP_URL + '/#organization',
+    name: s.title,
+    url: env.APP_URL,
+    logo: env.APP_URL + '/assets/ride-for-brains.png',
+    email: s.contact,
+    sameAs: (s.editorial?.socialLinks || [])
+      .map((r: any) => r.url)
+      .filter((url: string) => url.startsWith('https://')),
+  };
+  const breadcrumbs = {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Accueil', item: env.APP_URL },
+      ...(path === '/'
+        ? []
+        : [
+            ...(activity
+              ? [
+                  {
+                    '@type': 'ListItem',
+                    position: 2,
+                    name: 'Les activités',
+                    item: env.APP_URL + '/activites',
+                  },
+                ]
+              : []),
+            { '@type': 'ListItem', position: activity ? 3 : 2, name: title, item: canonical },
+          ]),
+    ],
+  };
+  const structured = {
+    '@context': 'https://schema.org',
+    '@graph': [event, organization, breadcrumbs],
+  };
   const nonce = crypto.randomUUID().replaceAll('-', '');
-  const tags = `<meta name="description" content="${escape(description)}"><meta name="robots" content="${privatePage || !known ? 'noindex, nofollow' : 'index, follow'}"><link rel="canonical" href="${escape(canonical)}"><meta property="og:type" content="website"><meta property="og:locale" content="fr_CA"><meta property="og:title" content="${escape(title)} — Ride For Brains"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(canonical)}"><meta property="og:image" content="${escape(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escape(title)}"><meta name="twitter:description" content="${escape(description)}"><meta name="twitter:image" content="${escape(image)}">${!privatePage && known ? `<script type="application/ld+json" nonce="${nonce}">${JSON.stringify(event).replace(/</g, '\\u003c')}</script>` : ''}`;
+  const tags = `<meta name="description" content="${escape(description)}"><meta name="robots" content="${privatePage || !known ? 'noindex, nofollow' : 'index, follow'}"><link rel="canonical" href="${escape(canonical)}"><meta property="og:type" content="website"><meta property="og:locale" content="fr_CA"><meta property="og:title" content="${escape(pageTitle)}"><meta property="og:description" content="${escape(description)}"><meta property="og:url" content="${escape(canonical)}"><meta property="og:image" content="${escape(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escape(pageTitle)}"><meta name="twitter:description" content="${escape(description)}"><meta name="twitter:image" content="${escape(image)}">${!privatePage && known ? `<script type="application/ld+json" nonce="${nonce}">${JSON.stringify(structured).replace(/</g, '\\u003c')}</script>` : ''}`;
   const source = await env.ASSETS.fetch(
     new Request(new URL('/index.html', request.url), { headers: request.headers }),
   );
   let html = await source.text();
   html = html
-    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escape(title)} — Ride For Brains</title>`)
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escape(pageTitle)}</title>`)
     .replace(/<meta\s+(?:name="description"|property="og:[^"]+"|name="twitter:[^"]+")[^>]*>/gi, '')
     .replace('</head>', tags + '</head>');
   if (!privatePage && known)

@@ -192,6 +192,494 @@ async function signedEvent(event) {
   return { status: res.status, data: await res.json() };
 }
 
+async function personalToken(registrationId) {
+  const row = await db
+    .prepare(
+      "SELECT body FROM outbox WHERE registration_id=? AND body LIKE '%/billet-personnel#%' ORDER BY rowid DESC LIMIT 1",
+    )
+    .bind(registrationId)
+    .first();
+  assert.ok(row, 'Personal ticket message exists');
+  return row.body.match(/billet-personnel#([a-f0-9]{64})/)[1];
+}
+test('Concurrent account draft claims both return the restored group instead of a stale empty draft', async () => {
+  const saved = await request('/draft/guest', {
+    participants: [participant('course-10')],
+    promo: '',
+    step: 2,
+  });
+  const guest = saved.res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ');
+  const u = await login();
+  const results = await Promise.all([
+    request('/draft', null, u.cookie + '; ' + guest),
+    request('/draft', null, u.cookie + '; ' + guest),
+  ]);
+  assert.ok(
+    results.every((r) => r.status === 200 && r.data?.participants[0].activityId === 'course-10'),
+  );
+});
+test('Revoked personal access is not revived by maintenance and an explicit resend rotates only that access', async () => {
+  const buyer = await login(),
+    admin = await login('owner@example.test', 'admin');
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(buyer.cookie, order([participant(), participant('course-10')]));
+  const regs = (await db.prepare('SELECT * FROM registrations ORDER BY id').all()).results;
+  const first = await personalToken(regs[0].id),
+    second = await personalToken(regs[1].id);
+  assert.equal(
+    (
+      await request(
+        '/admin/participants/' + regs[0].id + '/ticket-access/revoke',
+        { confirm: true },
+        buyer.cookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(
+        '/admin/participants/' + regs[0].id + '/ticket-access/revoke',
+        { confirm: true },
+        admin.cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal((await request('/tickets/view', { token: first })).status, 404);
+  assert.equal((await request('/tickets/view', { token: second })).status, 200);
+  assert.equal(
+    (
+      await db
+        .prepare('SELECT status FROM outbox WHERE dedupe=?')
+        .bind('confirmed:' + regs[0].id)
+        .first()
+    ).status,
+    'cancelled',
+  );
+  await request('/dev/tick', {});
+  assert.equal((await request('/tickets/view', { token: first })).status, 404);
+  assert.equal((await request('/admin/resend/' + regs[0].id, {}, admin.cookie)).status, 200);
+  const replacement = await personalToken(regs[0].id);
+  assert.notEqual(replacement, first);
+  assert.equal((await request('/tickets/view', { token: replacement })).status, 200);
+  assert.equal((await request('/tickets/view', { token: second })).status, 200);
+});
+test('A legacy participant without a personal grant can be revoked before backfill and remains revoked until explicit resend', async () => {
+  const buyer = await login(),
+    admin = await login('owner@example.test', 'admin');
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(buyer.cookie);
+  const r = await db.prepare('SELECT id FROM registrations').first();
+  await db
+    .prepare('DELETE FROM participant_ticket_access WHERE registration_id=?')
+    .bind(r.id)
+    .run();
+  assert.equal(
+    (
+      await request(
+        '/admin/participants/' + r.id + '/ticket-access/revoke',
+        { confirm: true },
+        admin.cookie,
+      )
+    ).status,
+    200,
+  );
+  const revoked = await db
+    .prepare('SELECT token_hash,revoked_at FROM participant_ticket_access WHERE registration_id=?')
+    .bind(r.id)
+    .first();
+  assert.ok(revoked.revoked_at);
+  await request('/dev/tick', {});
+  assert.deepEqual(
+    await db
+      .prepare(
+        'SELECT token_hash,revoked_at FROM participant_ticket_access WHERE registration_id=?',
+      )
+      .bind(r.id)
+      .first(),
+    revoked,
+  );
+  assert.equal((await request('/admin/resend/' + r.id, {}, admin.cookie)).status, 200);
+  assert.equal((await request('/tickets/view', { token: await personalToken(r.id) })).status, 200);
+});
+test('A ticket prepared before revocation or an identity change cannot override newer state when its batch commits', async () => {
+  const buyer = await login();
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(buyer.cookie);
+  const task = new Miniflare({
+    modules: [{ type: 'ESModule', path: resolve('work/tasks/index.js') }],
+    compatibilityDate: '2026-07-30',
+    compatibilityFlags: ['nodejs_compat'],
+    d1Databases: ['DB'],
+    bindings: {
+      APP_ENV: 'development',
+      APP_URL: origin,
+      BETTER_AUTH_SECRET: 'local-integration-secret-with-more-than-32-bytes',
+      PAYMENTS_MODE: 'test',
+    },
+  });
+  try {
+    const d = await task.getD1Database('DB');
+    await migrate(d);
+    for (const table of ['user', 'orders', 'registrations', 'participant_ticket_access'])
+      for (const row of (await db.prepare('SELECT * FROM ' + table).all()).results) {
+        const keys = Object.keys(row);
+        await d
+          .prepare(
+            'INSERT INTO ' +
+              table +
+              '(' +
+              keys.map((k) => '"' + k + '"').join(',') +
+              ') VALUES(' +
+              keys.map(() => '?').join(',') +
+              ')',
+          )
+          .bind(...keys.map((k) => row[k]))
+          .run();
+      }
+    await task.dispatchFetch('http://task/stage-ticket');
+    await d.prepare('UPDATE participant_ticket_access SET revoked_at=unixepoch()').run();
+    await task.dispatchFetch('http://task/commit-ticket');
+    assert.ok(
+      (await d.prepare('SELECT revoked_at FROM participant_ticket_access').first()).revoked_at,
+    );
+    assert.equal((await d.prepare('SELECT COUNT(*) n FROM outbox').first()).n, 0);
+    await d.prepare('DELETE FROM participant_ticket_access').run();
+    await task.dispatchFetch('http://task/stage-ticket');
+    await d
+      .prepare("UPDATE registrations SET email='new@example.test',ticket='new-qr-version'")
+      .run();
+    await task.dispatchFetch('http://task/commit-ticket');
+    assert.equal(
+      (await d.prepare('SELECT COUNT(*) n FROM participant_ticket_access').first()).n,
+      0,
+    );
+    assert.equal((await d.prepare('SELECT COUNT(*) n FROM outbox').first()).n, 0);
+  } finally {
+    await task.dispose();
+  }
+});
+test('Individual cancellation refunds only its discounted paid share and a failed refund never revives the ticket', async () => {
+  const buyer = await login();
+  await db
+    .prepare("INSERT INTO promos(code,percent,max_uses,active) VALUES('SHARE25',25,1,1)")
+    .run();
+  const o = await create(
+    buyer.cookie,
+    order([participant(), participant('course-10')], { promo: 'SHARE25' }),
+  );
+  await payOrder(buyer.cookie, o);
+  const rows = (
+    await db.prepare('SELECT * FROM registrations WHERE order_id=? ORDER BY id').bind(o.id).all()
+  ).results;
+  assert.equal(rows[0].price, 1125);
+  mock
+    .get('https://api.stripe.com')
+    .intercept({ path: '/v1/refunds', method: 'POST' })
+    .reply(200, async (opts) => {
+      const b = new URLSearchParams(await new Response(opts.body).text());
+      assert.equal(Number(b.get('amount')), 1125);
+      return {
+        id: 're_failed_individual',
+        amount: 1125,
+        payment_intent: 'pi_' + o.id,
+        status: 'failed',
+        metadata: { job_id: b.get('metadata[job_id]') },
+      };
+    });
+  const cancelled = await request(
+    '/registrations/' + rows[0].id + '/cancel',
+    { confirm: true },
+    buyer.cookie,
+  );
+  assert.equal(cancelled.data.refundRequested, 1125);
+  for (let i = 0; i < 100; i++) {
+    if ((await db.prepare('SELECT status FROM refund_jobs').first())?.status === 'failed') break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal((await db.prepare('SELECT status FROM refund_jobs').first()).status, 'failed');
+  assert.equal(
+    (await request('/registrations/' + rows[0].id + '/ticket', null, buyer.cookie)).status,
+    404,
+  );
+  assert.equal(
+    (await request('/registrations/' + rows[1].id + '/ticket', null, buyer.cookie)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT COUNT(*) n FROM outbox WHERE dedupe LIKE 'refund-confirmed:%'")
+        .first()
+    ).n,
+    0,
+  );
+});
+test('Concurrent refund webhooks cannot lose a balance or regress a successful refund on a late pending event', async () => {
+  const buyer = await login(),
+    o = await create(buyer.cookie);
+  await payOrder(buyer.cookie, o);
+  for (const [id, amount] of [
+    ['re_concurrent_a', 500],
+    ['re_concurrent_b', 1000],
+  ]) {
+    mock
+      .get('https://api.stripe.com')
+      .intercept({ path: '/v1/refunds/' + id, method: 'GET' })
+      .reply(200, { id, amount, payment_intent: 'pi_' + o.id, status: 'succeeded', metadata: {} });
+  }
+  const results = await Promise.all(
+    ['a', 'b'].map((s) =>
+      signedEvent({
+        id: 'evt_concurrent_' + s,
+        type: 'refund.updated',
+        data: { object: { id: 're_concurrent_' + s } },
+      }),
+    ),
+  );
+  assert.ok(results.every((r) => r.status === 200));
+  let current = await db
+    .prepare('SELECT status,refunded FROM orders WHERE id=?')
+    .bind(o.id)
+    .first();
+  assert.deepEqual(current, { status: 'refunded', refunded: 1500 });
+  mock
+    .get('https://api.stripe.com')
+    .intercept({ path: '/v1/refunds/re_concurrent_a', method: 'GET' })
+    .reply(200, {
+      id: 're_concurrent_a',
+      amount: 500,
+      payment_intent: 'pi_' + o.id,
+      status: 'pending',
+      metadata: {},
+    });
+  assert.equal(
+    (
+      await signedEvent({
+        id: 'evt_concurrent_late',
+        type: 'refund.updated',
+        data: { object: { id: 're_concurrent_a' } },
+      })
+    ).status,
+    200,
+  );
+  current = await db.prepare('SELECT status,refunded FROM orders WHERE id=?').bind(o.id).first();
+  assert.deepEqual(current, { status: 'refunded', refunded: 1500 });
+});
+test('A guest autosave survives reload, stays encrypted and restores its activity and step after sign-in', async () => {
+  const p = { ...participant('course-10'), firstName: 'Partial draft', conditions: false };
+  const first = await request('/draft/guest', { participants: [p], promo: '', step: 2 });
+  const cookie = first.res.headers
+    .getSetCookie()
+    .map((c) => c.split(';')[0])
+    .join('; ');
+  assert.equal((await request('/draft/guest', null)).data, null);
+  assert.equal(
+    (await request('/draft/guest', null, cookie)).data.participants[0].firstName,
+    'Partial draft',
+  );
+  assert.equal(
+    (
+      await request(
+        '/draft/guest',
+        { participants: [{ ...p, firstName: 'Latest draft' }], promo: '', step: 2 },
+        cookie,
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request('/draft/guest', null, cookie)).data.participants[0].firstName,
+    'Latest draft',
+  );
+  assert.ok(
+    !(await db.prepare('SELECT ciphertext FROM guest_drafts').first()).ciphertext.includes(
+      'Latest draft',
+    ),
+  );
+  const u = await login();
+  const restored = await request('/draft', null, u.cookie + '; ' + cookie);
+  assert.equal(restored.data.step, 2);
+  assert.equal(restored.data.participants[0].activityId, 'course-10');
+  assert.equal((await request('/draft/guest', null, cookie)).data, null);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM orders').first()).n, 0);
+});
+test('Each member of a group receives a different opaque link limited to its own confirmed ticket', async () => {
+  const u = await login();
+  await db.prepare('UPDATE activities SET price=0').run();
+  const o = await create(
+    u.cookie,
+    order([
+      participant('course-5', { firstName: 'Alice', email: 'alice@example.test' }),
+      participant('course-10', { firstName: 'Bob', email: 'bob@example.test' }),
+    ]),
+  );
+  const regs = (
+    await db
+      .prepare('SELECT id,first_name FROM registrations WHERE order_id=? ORDER BY first_name')
+      .bind(o.id)
+      .all()
+  ).results;
+  const a = await personalToken(regs[0].id),
+    b = await personalToken(regs[1].id);
+  assert.notEqual(a, b);
+  const result = await request('/tickets/view', { token: a });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.first_name, 'Alice');
+  for (const value of [
+    'Bob',
+    'bob@example.test',
+    'payer@example.test',
+    '5145550199',
+    'emergency',
+    'answers',
+    'payment_intent',
+    'refunded',
+    'order_id',
+  ])
+    assert.ok(!JSON.stringify(result.data).includes(value), value);
+  assert.equal((await request('/registrations/' + regs[1].id + '/ticket', null)).status, 401);
+  assert.equal((await request('/tickets/view', { token: '0'.repeat(64) })).status, 404);
+  assert.equal(
+    (await request('/registrations/' + regs[0].id + '/cancel', { confirm: true }, u.cookie)).status,
+    200,
+  );
+  assert.equal((await request('/tickets/view', { token: a })).status, 404);
+  assert.equal((await request('/tickets/view', { token: b })).status, 200);
+});
+test('Participant email correction verifies the new recipient and rotates only that ticket without changing any account', async () => {
+  const u = await login(),
+    admin = await login('owner@example.test', 'admin');
+  await db.prepare('UPDATE activities SET price=0').run();
+  const o = await create(
+    u.cookie,
+    order([
+      participant(),
+      participant('course-10', { firstName: 'Other', email: 'other@example.test' }),
+    ]),
+  );
+  const regs = (
+    await db
+      .prepare('SELECT * FROM registrations WHERE order_id=? ORDER BY activity_id DESC')
+      .bind(o.id)
+      .all()
+  ).results;
+  const r = regs.find((r) => r.activity_id === 'course-5'),
+    other = regs.find((r) => r.activity_id === 'course-10');
+  const old = await personalToken(r.id),
+    otherToken = await personalToken(other.id);
+  const path = '/admin/participants/' + r.id + '/email-change';
+  assert.equal(
+    (await request(path, { email: 'correct@example.test', confirm: true }, u.cookie)).status,
+    403,
+  );
+  assert.equal(
+    (await request(path, { email: 'correct@example.test', confirm: false }, admin.cookie)).status,
+    400,
+  );
+  assert.equal(
+    (await request(path, { email: 'correct@example.test', confirm: true }, admin.cookie)).status,
+    200,
+  );
+  assert.equal((await request('/tickets/view', { token: old })).status, 404);
+  assert.equal((await request('/admin/resend/' + r.id, {}, admin.cookie)).status, 409);
+  assert.equal(
+    (await db.prepare('SELECT email FROM registrations WHERE id=?').bind(r.id).first()).email,
+    r.email,
+  );
+  const mail = await db
+    .prepare("SELECT body FROM outbox WHERE recipient='correct@example.test'")
+    .first();
+  const token = mail.body.match(/confirmer-courriel#([a-f0-9]{64})/)[1];
+  assert.equal((await request('/tickets/confirm-email', { token, confirm: true })).status, 200);
+  assert.equal((await request('/tickets/confirm-email', { token, confirm: true })).status, 404);
+  const changed = await db
+    .prepare('SELECT email,ticket FROM registrations WHERE id=?')
+    .bind(r.id)
+    .first();
+  assert.equal(changed.email, 'correct@example.test');
+  assert.notEqual(changed.ticket, r.ticket);
+  assert.equal(
+    (await db.prepare('SELECT email FROM user WHERE id=?').bind(u.id).first()).email,
+    'payer@example.test',
+  );
+  assert.equal((await request('/tickets/view', { token: await personalToken(r.id) })).status, 200);
+  assert.equal((await request('/tickets/view', { token: otherToken })).status, 200);
+  assert.equal(
+    (
+      await db
+        .prepare("SELECT COUNT(*) n FROM audit WHERE action='participant.email_changed'")
+        .first()
+    ).n,
+    1,
+  );
+  const journal = await request('/admin/mail', null, admin.cookie);
+  assert.ok(!JSON.stringify(journal.data).includes(token));
+  assert.ok(!JSON.stringify(journal.data).includes(otherToken));
+});
+test('Expired or superseded email corrections cannot change a participant', async () => {
+  const u = await login(),
+    admin = await login('owner@example.test', 'admin');
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(u.cookie);
+  const r = await db.prepare('SELECT id,email FROM registrations').first();
+  await request(
+    '/admin/participants/' + r.id + '/email-change',
+    { email: 'first@example.test', confirm: true },
+    admin.cookie,
+  );
+  const first = (
+    await db.prepare("SELECT body FROM outbox WHERE recipient='first@example.test'").first()
+  ).body.match(/confirmer-courriel#([a-f0-9]{64})/)[1];
+  await request(
+    '/admin/participants/' + r.id + '/email-change',
+    { email: 'second@example.test', confirm: true },
+    admin.cookie,
+  );
+  assert.equal(
+    (await request('/tickets/confirm-email', { token: first, confirm: true })).status,
+    404,
+  );
+  const second = (
+    await db.prepare("SELECT body FROM outbox WHERE recipient='second@example.test'").first()
+  ).body.match(/confirmer-courriel#([a-f0-9]{64})/)[1];
+  await db.prepare('UPDATE participant_email_changes SET expires_at=1').run();
+  assert.equal(
+    (await request('/tickets/confirm-email', { token: second, confirm: true })).status,
+    404,
+  );
+  assert.equal(
+    (await db.prepare('SELECT email FROM registrations WHERE id=?').bind(r.id).first()).email,
+    r.email,
+  );
+});
+test('Checkout polling and receipt data stay private and never declare a pending payment received', async () => {
+  const u = await login(),
+    other = await login('other@example.test');
+  const o = await create(u.cookie);
+  const pending = await request('/orders/' + o.id + '/status', null, u.cookie);
+  assert.equal(pending.data.paid, false);
+  assert.equal(pending.data.status, 'pending');
+  assert.equal((await request('/orders/' + o.id + '/status', null, other.cookie)).status, 404);
+  assert.equal((await request('/orders/' + o.id + '/receipt', null, other.cookie)).status, 404);
+  const receipt = await request('/orders/' + o.id + '/receipt', null, u.cookie);
+  assert.equal(receipt.data.paid, 0);
+  assert.equal(receipt.data.total, 1500);
+  const session = await checkoutFixture(u.cookie, o.id);
+  mockSession(sessionFixture(o.id, session));
+  await signedEvent({
+    id: 'evt_poll_confirm',
+    type: 'checkout.session.completed',
+    data: { object: { id: session } },
+  });
+  assert.equal((await request('/orders/' + o.id + '/status', null, u.cookie)).data.paid, true);
+  assert.equal((await request('/orders/' + o.id + '/receipt', null, u.cookie)).data.paid, 1500);
+});
+
 test('An admin revokes every other staff role without deleting participant accounts or orders', async () => {
   const owner = await login('owner@example.test', 'admin');
   await db.prepare('UPDATE activities SET price=0').run();
@@ -2433,8 +2921,8 @@ test('Cancelling one of three paid participations refunds exactly its price and 
   mock
     .get('https://api.stripe.com')
     .intercept({ path: '/v1/refunds', method: 'POST' })
-    .reply(200, (opts) => {
-      const b = new URLSearchParams(String(opts.body));
+    .reply(200, async (opts) => {
+      const b = new URLSearchParams(await new Response(opts.body).text());
       return {
         id: 're_individual',
         amount: Number(b.get('amount')),
@@ -2695,6 +3183,19 @@ test('CRM details remain private and enforce kind-specific stages', async () => 
   assert.equal((await request('/admin/health', null, admin.cookie)).status, 200);
 });
 test('Server social metadata, sitemap and calendars use D1 facts and keep participant pages noindex', async () => {
+  const home = await (await mf.dispatchFetch(origin + '/')).text();
+  const homeTitle = home.match(/<title>(.*?)<\/title>/s)[1];
+  assert.equal((homeTitle.match(/Ride For Brains/g) || []).length, 1);
+  assert.match(homeTitle, /21 août 2027/);
+  assert.match(homeTitle, /Vélo, course et marche/);
+  const graph = JSON.parse(
+    home.match(/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/s)[1],
+  )['@graph'];
+  assert.deepEqual(graph.map((g) => g['@type']).sort(), [
+    'BreadcrumbList',
+    'Organization',
+    'SportsEvent',
+  ]);
   const page = await mf.dispatchFetch(origin + '/activites/course-10');
   const html = await page.text();
   assert.equal(page.status, 200);
@@ -2731,6 +3232,16 @@ test('HTML metadata escapes editorial markup and private routes expose no invita
   const privatePage = await mf.dispatchFetch(origin + '/transfert?invitation=private-token');
   assert.equal(privatePage.headers.get('X-Robots-Tag'), 'noindex, nofollow');
   assert.ok(!(await privatePage.text()).includes('private-token'));
+  for (const path of [
+    '/billet-personnel#private-token',
+    '/confirmer-courriel#private-token',
+    '/recu/00000000-0000-4000-8000-000000000000?token=private-token',
+  ]) {
+    const page = await mf.dispatchFetch(origin + path);
+    assert.equal(page.headers.get('X-Robots-Tag'), 'noindex, nofollow');
+    assert.match(page.headers.get('Cache-Control'), /no-store/);
+    assert.ok(!(await page.text()).includes('private-token'));
+  }
 });
 
 test('Exhausted promos leave the active list, preserve redemptions after removal and can be deliberately extended', async () => {
@@ -3126,6 +3637,40 @@ async function waitForMailState(database, id, state) {
   }
   assert.fail('Mail did not reach ' + state);
 }
+test('Public live registration stays closed until explicit launch decisions and final policies are present', async () => {
+  const f = await productionMailFixture({ PAYMENTS_MODE: 'live' });
+  try {
+    let res = await f.call('/public');
+    assert.equal((await res.json()).settings.registrationOpen, false);
+    const blocked = await f.call('/orders', order());
+    assert.equal(blocked.status, 409, await blocked.text());
+    const s = JSON.parse((await f.pdb.prepare('SELECT data FROM settings').first()).data);
+    Object.assign(s, {
+      location: 'Lieu validé dans la fixture',
+      legalApproved: true,
+      brandApproved: true,
+      taxMode: 'not_applicable',
+      terms: 'Conditions finalisées dans la fixture locale.',
+      privacy: 'Politique finalisée dans la fixture locale.',
+      launchReview: {
+        refundApproved: true,
+        taxApproved: true,
+        eventApproved: true,
+        cancellation: 'Conditions de la fixture',
+        postponement: 'Conditions de la fixture',
+        weather: 'Conditions de la fixture',
+        forceMajeure: 'Conditions de la fixture',
+      },
+    });
+    await f.pdb.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+    res = await f.call('/public');
+    assert.equal((await res.json()).settings.registrationOpen, true);
+    assert.equal((await f.pdb.prepare('SELECT COUNT(*) n FROM orders').first()).n, 0);
+  } finally {
+    await f.prod.dispose();
+    await f.external.close();
+  }
+});
 
 test('Free confirmations and manual queue processing attempt delivery promptly without recreating messages', async () => {
   const f = await productionMailFixture();

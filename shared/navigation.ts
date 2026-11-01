@@ -23,7 +23,7 @@ export function safeReturnUrl(value: unknown, fallback = '/espace'): string {
     const url = new URL(value, base);
     if (
       url.origin !== base ||
-      (!routes.has(url.pathname) && !/^\/billet\/[a-f0-9-]{36}$/.test(url.pathname))
+      (!routes.has(url.pathname) && !/^\/(billet|recu)\/[a-f0-9-]{36}$/.test(url.pathname))
     )
       return fallback;
     return url.pathname + url.search;

@@ -21,7 +21,7 @@ npm run dev
 
 Le serveur est à **http://localhost:8787**. `npm run dev` compile le client et le Worker, crée un secret local aléatoire dans `.dev.vars` s’il n’existe pas, applique les migrations à une base locale et lance Workerd via Miniflare. Les données locales sont dans `work/runtime/d1`, jamais dans la base Cloudflare de production. Après une modification de code, relancer le serveur.
 
-La boîte **« Courriels locale »** permet de lire les liens de connexion et confirmations en développement. Aucun message n’est envoyé à un tiers. Cette route est désactivée en production. Le tarif reste 15 $ : sans Stripe, tenter de payer produit une erreur explicite et aucun prélèvement. Pour tester gratuitement, un administrateur peut temporairement fixer un tarif à 0 ou créer un code à 100 %, puis rétablir le tarif.
+La boîte **« Courriels locale »** permet de lire les codes à six chiffres et les confirmations en développement. Aucun message n’est envoyé à un tiers. Cette route est désactivée en production. Les tarifs sont administrables et les valeurs existantes sont conservées : vélo 30 $, course 10 km 20 $, course 5 km 15 $, course 2 km 10 $, marche gratuite au 1er novembre 2026. Sans Stripe, tenter de payer produit une erreur explicite et aucun prélèvement. Les tests utilisent des prestataires simulés et leurs propres tarifs de fixture.
 
 Si l’antivirus intercepte TLS, configurer son certificat de confiance avec `NODE_EXTRA_CA_CERTS`. Ne pas désactiver la vérification TLS. Dans un environnement qui interdit au compilateur de lire les dossiers parents, le lancement local utilise le compilateur Vite puis Miniflare directement; Wrangler reste l’outil de déploiement standard.
 
@@ -64,6 +64,9 @@ Les tests créent des bases éphémères indépendantes et interdisent les conne
 Les clés secrètes restent dans `.dev.vars` localement ou dans les secrets Workers. Ne jamais les committer, les intégrer au client, ni les coller dans un ticket public. `.env.example` ne contient aucun identifiant réel.
 
 ## Guides
+
+- [Livraison et recette du 1er novembre 2026](docs/LIVRAISON-NOVEMBRE-2026.md) : brouillons automatiques, billets personnels, correction de courriel, confirmation et préparation de publication.
+- [Faire apparaître le site dans Google et Bing](docs/INDEXATION-RECHERCHE.md) : vérification Search Console par DNS et envoi du sitemap.
 
 - [Déployer sur Cloudflare, configurer Stripe et les courriels](docs/DEPLOIEMENT.md)
 - [Utiliser l’administration](docs/ADMINISTRATION.md)

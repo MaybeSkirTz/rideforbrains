@@ -170,6 +170,7 @@ export default function ContentEditor({
           { key: 'url', label: 'Adresse de l’image', type: 'image' },
           { key: 'alt', label: 'Description accessible' },
           { key: 'caption', label: 'Légende' },
+          { key: 'year', label: 'Année (facultatif)' },
           {
             key: 'section',
             label: 'Section',
@@ -217,6 +218,15 @@ export default function ContentEditor({
         ]}
       />
       <h3>Première édition</h3>
+      <Field label="Année de la première édition">
+        <input
+          value={e.firstEdition.year}
+          onChange={(v) => edition('year', v.target.value)}
+          placeholder="Année vérifiée"
+          maxLength={4}
+          inputMode="numeric"
+        />
+      </Field>
       <Field label="Titre de la première édition">
         <input value={e.firstEdition.title} onChange={(v) => edition('title', v.target.value)} />
       </Field>
@@ -266,6 +276,61 @@ export default function ContentEditor({
           { key: 'photo', label: 'Portrait autorisé (adresse)', type: 'image' },
         ]}
       />
+      <Rows
+        label="Médias et presse"
+        rows={e.media}
+        change={(v) => edit('media', v)}
+        blank={{
+          name: '',
+          title: '',
+          url: '',
+          logo: '',
+          quote: '',
+          date: '',
+          enabled: true,
+          order: 0,
+        }}
+        fields={[
+          { key: 'name', label: 'Nom du média' },
+          { key: 'title', label: 'Titre de l’article' },
+          { key: 'url', label: 'Lien de l’article', type: 'url' },
+          { key: 'logo', label: 'Logo autorisé', type: 'image' },
+          { key: 'quote', label: 'Courte citation exacte', type: 'textarea' },
+          { key: 'date', label: 'Date de publication' },
+        ]}
+      />
+      <Rows
+        label="Réseaux sociaux"
+        rows={e.socialLinks}
+        change={(v) => edit('socialLinks', v)}
+        blank={{ name: '', url: '' }}
+        fields={[
+          { key: 'name', label: 'Nom du réseau' },
+          { key: 'url', label: 'Adresse officielle', type: 'url' },
+        ]}
+      />
+      <Rows
+        label="Rôles bénévoles disponibles"
+        rows={e.volunteerRoles}
+        change={(v) => edit('volunteerRoles', v)}
+        blank={{ title: '', description: '' }}
+        fields={[
+          { key: 'title', label: 'Rôle' },
+          { key: 'description', label: 'Mission et disponibilités recherchées', type: 'textarea' },
+        ]}
+      />
+      <Field label="Présentation des commandites">
+        <textarea
+          value={e.sponsorshipIntro}
+          onChange={(v) => edit('sponsorshipIntro', v.target.value)}
+        />
+      </Field>
+      <Field label="Possibilités de partenariat confirmées (une par ligne)">
+        <textarea
+          value={e.sponsorshipOptions.join('\n')}
+          onChange={(v) => edit('sponsorshipOptions', v.target.value.split('\n').filter(Boolean))}
+        />
+      </Field>
       <Rows
         label="Informations pratiques"
         rows={e.practical}

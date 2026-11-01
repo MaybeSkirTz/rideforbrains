@@ -1,6 +1,11 @@
 import type { Env } from './types';
 export const funnelEvents = [
   'visit',
+  'home_view',
+  'account_step',
+  'registration_form_complete',
+  'checkout_return',
+  'registration_confirmed',
   'activity_view',
   'registration_start',
   'account_request',

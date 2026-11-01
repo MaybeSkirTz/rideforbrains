@@ -42,16 +42,25 @@ import { Context, useApp, type Data } from './context';
 import { go, Link, Notice, Field, Button, Page, DynamicFields } from './ui';
 import { accountUrl } from '../shared/navigation';
 import { donationNotice, donationDestination } from '../shared/event';
+import { editorial } from '../shared/editorial';
 import Account from './Account';
 import { PublicParticipants, ListingPreference } from './PublicParticipants';
 import { publicListingText } from '../shared/public-participants';
 import { staffHome } from '../shared/admin-access';
 import Guardians, { GuardianRequest } from './Guardians';
 import { participationPolicy } from '../shared/participation';
+import {
+  participantComplete,
+  sportLabel,
+  activityPricing,
+  activityPriceLabel,
+} from '../shared/registration';
 import { Home, Activities, Practical, Team, Cause, FAQ } from './Public';
 
 import Turnstile from './Turnstile';
 import { track } from './tracking';
+import CheckoutStatus from './CheckoutStatus';
+import ConfirmParticipantEmail from './ConfirmParticipantEmail';
 const eventDate = (s: any) =>
   new Date(s.eventAt).toLocaleDateString('fr-CA', {
     day: 'numeric',
@@ -61,7 +70,9 @@ const eventDate = (s: any) =>
   });
 import './styles.css';
 import './editorial.css';
+import './experience.css';
 const TicketPage = lazy(() => import('./TicketPage'));
+const ReceiptPage = lazy(() => import('./ReceiptPage'));
 const Admin = lazy(() => import('./Admin'));
 function App() {
   const [data, setData] = useState<Data | null>(null),
@@ -132,10 +143,17 @@ function App() {
   else if (path === '/attente') page = <Waitlist />;
   else if (path === '/connexion' || path === '/compte') page = <Account />;
   else if (path === '/autorisations-parentales') page = <Guardians />;
-  else if (path.startsWith('/billet/'))
+  else if (path === '/confirmer-courriel') page = <ConfirmParticipantEmail />;
+  else if (path.startsWith('/recu/'))
+    page = (
+      <Suspense fallback={<p>Chargement du reçu…</p>}>
+        <ReceiptPage id={path.slice(6)} />
+      </Suspense>
+    );
+  else if (path.startsWith('/billet/') || path === '/billet-personnel')
     page = (
       <Suspense fallback={<p>Chargement du billet…</p>}>
-        <TicketPage id={path.slice(8)} />
+        <TicketPage id={path.slice(8)} personal={path === '/billet-personnel'} />
       </Suspense>
     );
   else if (path === '/espace') page = <Participant />;
@@ -176,7 +194,16 @@ function App() {
     );
   return (
     <Context.Provider value={{ data, user, refresh }}>
-      <a className="skip" href="#main">
+      <a
+        className="skip"
+        href="#main"
+        onClick={(event) => {
+          event.preventDefault();
+          const main = document.getElementById('main');
+          main?.focus();
+          main?.scrollIntoView({ behavior: 'auto' });
+        }}
+      >
         Aller au contenu
       </a>
       <Header path={path} />
@@ -194,6 +221,33 @@ function App() {
 function Header({ path }: any) {
   const { data, user } = useApp();
   const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const currentActivity = data.activities.find((a) => path === '/activites/' + a.id);
+  const sport = ['velo', 'course', 'marche'].find((sport) => path === '/' + sport);
+  const relevantActivities = currentActivity
+    ? [currentActivity]
+    : sport
+      ? data.activities.filter((activity) => activity.sport === sport)
+      : data.activities;
+  const registrationActivity = currentActivity || (sport ? relevantActivities[0] : null);
+  const pricing = activityPricing(relevantActivities);
+  const publicPage =
+    !/^\/(inscription|attente|connexion|compte|espace|admin|organisation|billet|billet-personnel|recu|confirmer-courriel|autorisations-parentales|courriels-locaux)(\/|$)/.test(
+      path,
+    );
+  useEffect(() => {
+    const hero = document.querySelector('.opening-story');
+    if (!hero) {
+      setPinned(true);
+      return;
+    }
+    setPinned(false);
+    const observer = new IntersectionObserver(([entry]) =>
+      setPinned(!entry.isIntersecting && entry.boundingClientRect.top < 0),
+    );
+    observer.observe(hero);
+    return () => observer.disconnect();
+  }, [path]);
   useEffect(() => setOpen(false), [path]);
   useEffect(() => {
     if (open) document.querySelector<HTMLElement>('#primary-nav a')?.focus({ preventScroll: true });
@@ -212,55 +266,79 @@ function Header({ path }: any) {
           )}
         </div>
       )}
-      <header
-        className="header"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape' && open) {
-            setOpen(false);
-            document.querySelector<HTMLElement>('.menu-toggle')?.focus({ preventScroll: true });
-          }
-        }}
-      >
-        <Link to="/" className="brand" aria-label="Ride For Brains, accueil">
-          <img src="/assets/ride-for-brains.png" alt="" />
-          <span>
-            RIDE FOR
-            <br />
-            <b>
-              BRAINS<span className="brand-dot">.</span>
-            </b>
-          </span>
-        </Link>
-        <nav
-          id="primary-nav"
-          aria-label="Navigation principale"
-          className={open ? 'nav open' : 'nav'}
+      <div className="site-header-shell">
+        <header
+          className={'header' + (pinned ? ' is-pinned' : '')}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && open) {
+              setOpen(false);
+              document.querySelector<HTMLElement>('.menu-toggle')?.focus({ preventScroll: true });
+            }
+          }}
         >
-          <Link to="/activites" className={path === '/activites' ? 'active' : ''}>
-            Les activités
+          <Link to="/" className="brand" aria-label="Ride For Brains, accueil">
+            <img src="/assets/ride-for-brains.png" alt="" />
+            <span>
+              RIDE FOR
+              <br />
+              <b>
+                BRAINS<span className="brand-dot">.</span>
+              </b>
+            </span>
           </Link>
-          <Link to="/participants">Les participants</Link>
-          <Link to="/cause">La cause</Link>
-          <Link to="/infos">Infos pratiques</Link>
-          <Link to="/equipe">Notre histoire</Link>
-          <Link to={user ? '/espace' : '/connexion'} className="account-link">
-            <UserRound size={17} />
-            Mon espace
+          <nav
+            id="primary-nav"
+            aria-label="Navigation principale"
+            className={open ? 'nav open' : 'nav'}
+          >
+            <Link
+              to="/activites"
+              aria-current={
+                /^\/(activites|velo|course|marche)(\/|$)/.test(path) ? 'page' : undefined
+              }
+            >
+              Les activités
+            </Link>
+            <Link to="/participants" aria-current={path === '/participants' ? 'page' : undefined}>
+              Les participants
+            </Link>
+            <Link to="/cause" aria-current={path === '/cause' ? 'page' : undefined}>
+              La cause
+            </Link>
+            <Link
+              to="/infos"
+              aria-current={['/infos', '/parcours'].includes(path) ? 'page' : undefined}
+            >
+              Infos pratiques
+            </Link>
+            <Link to="/equipe" aria-current={path === '/equipe' ? 'page' : undefined}>
+              Notre histoire
+            </Link>
+            <Link
+              to={user ? '/espace' : '/connexion'}
+              className="account-link"
+              aria-current={
+                ['/espace', '/connexion', '/compte'].includes(path) ? 'page' : undefined
+              }
+            >
+              <UserRound size={17} />
+              Mon espace
+            </Link>
+          </nav>
+          <Link to="/inscription" className="button nav-cta">
+            Je participe <ArrowUpRight size={17} />
           </Link>
-        </nav>
-        <Link to="/inscription" className="button nav-cta">
-          Je participe <ArrowUpRight size={17} />
-        </Link>
-        <button
-          className="menu-toggle"
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          aria-controls="primary-nav"
-          aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
-        >
-          {open ? <X /> : <Menu />}
-        </button>
-      </header>
+          <button
+            className="menu-toggle"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-controls="primary-nav"
+            aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
+          >
+            {open ? <X /> : <Menu />}
+          </button>
+        </header>
+      </div>
       <div className="mobile-account-bar">
         <Link to={user ? '/espace' : '/connexion'}>
           <UserRound size={17} />
@@ -268,6 +346,17 @@ function Header({ path }: any) {
           <ArrowUpRight size={16} />
         </Link>
       </div>
+      {data.settings.registrationOpen && publicPage && pricing.amount !== null && (
+        <Link
+          className="mobile-register-sticky"
+          to={
+            registrationActivity ? '/inscription?activite=' + registrationActivity.id : '/activites'
+          }
+        >
+          S’inscrire — {activityPriceLabel(relevantActivities)}
+          <ArrowRight size={18} />
+        </Link>
+      )}
     </>
   );
 }
@@ -299,6 +388,15 @@ function Footer() {
           <span className="small">
             {data.settings.edition} · {eventDate(data.settings)}
           </span>
+          {editorial(data.settings).socialLinks.length > 0 && (
+            <nav className="social-links" aria-label="Réseaux sociaux">
+              {editorial(data.settings).socialLinks.map((s) => (
+                <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer">
+                  {s.name}
+                </a>
+              ))}
+            </nav>
+          )}
         </div>
         <div>
           <b>L’événement</b>
@@ -312,6 +410,7 @@ function Footer() {
           <Link to="/benevolat">Devenir bénévole</Link>
           <Link to="/partenaires">Devenir partenaire</Link>
           <Link to="/contact">Nous joindre</Link>
+          <a href={'mailto:' + data.settings.contact}>{data.settings.contact}</a>
           <a href={data.settings.donationUrl} target="_blank" rel="noopener noreferrer">
             Faire un don <ArrowUpRight size={13} />
           </a>
@@ -361,6 +460,16 @@ function Contact({ kind }: any) {
         message: f.get('message'),
         consent: true,
         turnstileToken: token,
+        details:
+          kind === 'volunteer'
+            ? {
+                phone: String(f.get('phone') || ''),
+                availability: String(f.get('availability') || ''),
+                preferredRole: String(f.get('preferredRole') || ''),
+              }
+            : kind === 'sponsor'
+              ? { company: String(f.get('company') || ''), phone: String(f.get('phone') || '') }
+              : {},
       });
       setResult(r.message);
     } catch (e) {
@@ -383,7 +492,7 @@ function Contact({ kind }: any) {
         kind === 'volunteer'
           ? 'Dites-nous comment vous aimeriez contribuer. L’organisation vous recontactera.'
           : kind === 'sponsor'
-            ? 'Vous souhaitez soutenir l’événement? Présentez-nous votre projet de partenariat.'
+            ? 'Soutenez un rendez-vous de vélo, course et marche au service de la recherche sur le cerveau. Construisons ensemble un partenariat adapté.'
             : 'Une question sur votre inscription ou sur la journée? Écrivez-nous.'
       }
     >
@@ -393,6 +502,25 @@ function Contact({ kind }: any) {
           <h3>Parlons-en.</h3>
           <a href={'mailto:' + data.settings.contact}>{data.settings.contact}</a>
           <p>Thomas · Équipe Ride For Brains</p>
+          {kind === 'volunteer' &&
+            editorial(data.settings).volunteerRoles.map((r, i) => (
+              <div key={i}>
+                <h3>{r.title}</h3>
+                <p>{r.description}</p>
+              </div>
+            ))}
+          {kind === 'sponsor' && (
+            <>
+              <p>{editorial(data.settings).sponsorshipIntro || data.settings.cause}</p>
+              {editorial(data.settings).sponsorshipOptions.length > 0 && (
+                <ul>
+                  {editorial(data.settings).sponsorshipOptions.map((p, i) => (
+                    <li key={i}>{p}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
           {kind === 'sponsor' &&
             data.settings.partners.map((p: any) => (
               <a key={p.name} href={p.url} target="_blank" rel="noopener noreferrer">
@@ -410,6 +538,37 @@ function Contact({ kind }: any) {
             <Field label="Votre courriel">
               <input name="email" type="email" required autoComplete="email" />
             </Field>
+            {kind !== 'contact' && (
+              <Field label="Téléphone (facultatif)">
+                <input name="phone" type="tel" maxLength={35} autoComplete="tel" />
+              </Field>
+            )}
+            {kind === 'volunteer' && (
+              <>
+                <Field label="Vos disponibilités">
+                  <input name="availability" required maxLength={1000} />
+                </Field>
+                {editorial(data.settings).volunteerRoles.length > 0 ? (
+                  <Field label="Rôle préféré">
+                    <select name="preferredRole" defaultValue="">
+                      <option value="">Je suis disponible selon les besoins</option>
+                      {editorial(data.settings).volunteerRoles.map((r) => (
+                        <option key={r.title}>{r.title}</option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : (
+                  <Field label="Comment aimeriez-vous aider ?">
+                    <input name="preferredRole" maxLength={150} />
+                  </Field>
+                )}
+              </>
+            )}
+            {kind === 'sponsor' && (
+              <Field label="Entreprise / organisation">
+                <input name="company" required maxLength={150} autoComplete="organization" />
+              </Field>
+            )}
             <Field
               label={
                 kind === 'volunteer'
@@ -461,17 +620,34 @@ function Legal({ page }: any) {
             <p>
               Le calcul utilise le début de l’événement, fixé au{' '}
               {new Date(s.eventAt).toLocaleString('fr-CA', { timeZone: 'America/Toronto' })}, heure
-              du Québec. Une demande concernant un dossier avec plusieurs participants concerne tout
-              le dossier.
+              du Québec. Vous pouvez annuler une seule participation ou tout le dossier. Le
+              remboursement admissible porte sur le montant effectivement payé après rabais, diminué
+              des remboursements déjà reçus.
             </p>
             <p>
               La demande se fait depuis l’espace de l’acheteur. Un remboursement est confirmé
               seulement après son traitement par le prestataire. {donationDestination}
             </p>
-            <p>
-              Les dispositions en cas d’annulation ou de report par l’organisation restent à valider
-              avant ouverture.
-            </p>
+            {!data.settings.launchReview?.eventApproved && (
+              <p>
+                Les dispositions en cas d’annulation ou de report par l’organisation restent à
+                valider avant ouverture.
+              </p>
+            )}
+            {data.settings.launchReview &&
+              [
+                ['cancellation', 'Annulation par l’organisation'],
+                ['postponement', 'Report'],
+                ['weather', 'Météo'],
+                ['forceMajeure', 'Force majeure'],
+              ]
+                .filter(([key]) => data.settings.launchReview[key])
+                .map(([key, label]) => (
+                  <section key={key}>
+                    <h2>{label}</h2>
+                    <p className="prewrap">{data.settings.launchReview[key]}</p>
+                  </section>
+                ))}
           </>
         ) : (
           <p className="prewrap">{page === '/confidentialite' ? s.privacy : s.terms}</p>
@@ -623,50 +799,121 @@ function Registration() {
     [quote, setQuote] = useState<any>(null),
     [key, setKey] = useState(crypto.randomUUID());
   const [draftMessage, setDraftMessage] = useState('');
+  const [expandedParticipant, setExpandedParticipant] = useState(0);
+  const invalidFocus = useRef({ scheduled: false, reporting: false });
+  const draftFinalized = useRef(false);
+  const [draftReady, setDraftReady] = useState(false),
+    [saveStatus, setSaveStatus] = useState('');
+  const [draftRetry, setDraftRetry] = useState(0),
+    [draftLoadError, setDraftLoadError] = useState('');
+  const draftQueue = useRef<Promise<any>>(Promise.resolve());
+  const saveSequence = useRef(0),
+    lastSavedDraft = useRef('');
+  const latestDraft = useRef({ participants: people, promo, step });
+  latestDraft.current = { participants: people, promo, step };
+  const storeDraft = (keepalive = false) => {
+    if (draftFinalized.current) return Promise.resolve();
+    const value = latestDraft.current,
+      serialized = JSON.stringify(value),
+      sequence = ++saveSequence.current;
+    if (serialized === lastSavedDraft.current) return Promise.resolve();
+    setSaveStatus('Sauvegarde…');
+    const task = draftQueue.current
+      .catch(() => {})
+      .then(() =>
+        draftFinalized.current
+          ? undefined
+          : api(user ? '/draft' : '/draft/guest', value, user ? 'PUT' : 'POST', { keepalive }),
+      );
+    draftQueue.current = task;
+    return task
+      .then(() => {
+        lastSavedDraft.current = serialized;
+        if (sequence === saveSequence.current) setSaveStatus('Sauvegardé');
+      })
+      .catch((e) => {
+        if (sequence === saveSequence.current)
+          setSaveStatus('Sauvegarde interrompue. Réessayez avant de quitter.');
+        throw e;
+      });
+  };
+  const flushDraft = useRef(storeDraft);
+  flushDraft.current = storeDraft;
   useEffect(() => {
     setKey(crypto.randomUUID());
   }, [people, promo]);
   useEffect(() => {
-    if (user)
-      api('/draft')
-        .then((d) => {
-          if (
-            d?.participants?.length &&
-            (!pre || d.participants.some((p: any) => p.activityId === pre))
-          ) {
-            const restored = d.participants
-              .map((p: any) => {
-                const a = data.activities.find((a) => a.id === p.activityId);
-                return a
-                  ? {
-                      ...p,
-                      conditions: false,
-                      formVersion: a.form_version,
-                      answers: p.formVersion === a.form_version ? p.answers : {},
-                      guardianRequestId:
-                        p.formVersion === a.form_version ? p.guardianRequestId : undefined,
-                      guardianStatus:
-                        p.formVersion === a.form_version ? p.guardianStatus : undefined,
-                    }
-                  : null;
-              })
-              .filter(Boolean);
-            setPeople(restored.length ? restored : [emptyParticipant(initial)]);
-            setPromo(d.promo || '');
-            setDraftMessage(
-              'Votre brouillon a été restauré. Relisez et acceptez de nouveau les conditions avant de confirmer.',
-            );
-          }
-        })
-        .catch((e) => setError(e.message));
-  }, [user?.id]);
+    let active = true,
+      loaded = false;
+    setDraftReady(false);
+    setDraftLoadError('');
+    api(user ? '/draft' : '/draft/guest')
+      .then((d) => {
+        if (!active) return;
+        loaded = true;
+        if (
+          d?.participants?.length &&
+          (!pre || d.participants.some((p: any) => p.activityId === pre))
+        ) {
+          const restored = d.participants
+            .map((p: any) => {
+              const a = data.activities.find((a) => a.id === p.activityId);
+              return a
+                ? {
+                    ...p,
+                    conditions: false,
+                    formVersion: a.form_version,
+                    answers: p.formVersion === a.form_version ? p.answers : {},
+                    guardianRequestId:
+                      p.formVersion === a.form_version ? p.guardianRequestId : undefined,
+                    guardianStatus: p.formVersion === a.form_version ? p.guardianStatus : undefined,
+                  }
+                : null;
+            })
+            .filter(Boolean);
+          setPeople(restored.length ? restored : [emptyParticipant(initial)]);
+          setPromo(d.promo || '');
+          setStep(Math.min(2, d.step || 1));
+          setDraftMessage(
+            'Votre brouillon a été restauré. Relisez et acceptez de nouveau les conditions avant de confirmer.',
+          );
+        }
+      })
+      .catch((e) => {
+        if (active)
+          setDraftLoadError(
+            'Impossible de retrouver votre brouillon pour le moment. Réessayez avant de continuer.',
+          );
+      })
+      .finally(() => {
+        if (active && loaded) setDraftReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id, draftRetry]);
+  useEffect(() => {
+    if (!draftReady) return;
+    const timer = setTimeout(() => void flushDraft.current().catch(() => {}), 1800);
+    return () => clearTimeout(timer);
+  }, [people, promo, step, draftReady, user?.id]);
+  useEffect(() => {
+    if (!draftReady) return;
+    const hide = () => {
+      if (document.visibilityState === 'hidden') void flushDraft.current(true).catch(() => {});
+    };
+    const flush = () => void flushDraft.current(true).catch(() => {});
+    document.addEventListener('visibilitychange', hide);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', hide);
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [draftReady, user?.id]);
   const saveDraft = async () => {
     try {
-      await api(
-        user ? '/draft' : '/draft/guest',
-        { participants: people, promo },
-        user ? 'PUT' : 'POST',
-      );
+      await storeDraft();
       setDraftMessage(
         user
           ? 'Votre brouillon est enregistré dans votre compte. Aucune place n’est réservée.'
@@ -700,7 +947,7 @@ function Registration() {
         setBusy(true);
         try {
           if (!user) {
-            await api('/draft/guest', { participants: people, promo });
+            await storeDraft();
             go(accountUrl(location.pathname + location.search));
             return;
           }
@@ -711,7 +958,7 @@ function Registration() {
           const q = await api('/quote', { participants: people.map((p) => p.activityId), promo });
           setQuote(q);
           setStep(3);
-          track('form_complete', people[0]?.activityId);
+          track('registration_form_complete', people[0]?.activityId);
         } catch (e) {
           setError((e as Error).message);
         } finally {
@@ -724,6 +971,8 @@ function Registration() {
     setBusy(true);
     setError('');
     try {
+      await storeDraft();
+      draftFinalized.current = true;
       const order = await api('/orders', {
         participants: people,
         promo: promo || undefined,
@@ -739,6 +988,7 @@ function Registration() {
       track('checkout_start', people[0]?.activityId);
       location.assign(result.url);
     } catch (e) {
+      draftFinalized.current = false;
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -769,6 +1019,9 @@ function Registration() {
             <button type="button" className="text-link" onClick={saveDraft}>
               Enregistrer pour plus tard
             </button>
+            <span className="save-status" role="status" aria-live="polite">
+              {saveStatus}
+            </span>
           </div>
           <ol className="steps">
             {['Le choix', 'Les participants', 'Le récapitulatif'].map((t, i) => (
@@ -778,8 +1031,46 @@ function Registration() {
               </li>
             ))}
           </ol>
-          <div className="registration-layout">
-            <form onSubmit={next} className="registration-form">
+          {!draftReady &&
+            (draftLoadError ? (
+              <Notice error>
+                {draftLoadError}{' '}
+                <button
+                  type="button"
+                  className="text-link"
+                  onClick={() => setDraftRetry((n) => n + 1)}
+                >
+                  Réessayer
+                </button>
+              </Notice>
+            ) : (
+              <p role="status">Nous retrouvons votre brouillon…</p>
+            ))}
+          <div className="registration-layout" style={{ display: draftReady ? undefined : 'none' }}>
+            <form
+              onSubmit={next}
+              className="registration-form"
+              onInvalidCapture={(e) => {
+                if (invalidFocus.current.reporting) return;
+                e.preventDefault();
+                if (invalidFocus.current.scheduled) return;
+                invalidFocus.current.scheduled = true;
+                const field = e.target as HTMLInputElement;
+                const panel = (e.target as HTMLElement).closest<HTMLDetailsElement>(
+                  '.participant-entry',
+                );
+                if (panel) setExpandedParticipant(Number(panel.dataset.participant));
+                requestAnimationFrame(() => {
+                  if (field.isConnected) {
+                    field.focus();
+                    invalidFocus.current.reporting = true;
+                    field.reportValidity();
+                    invalidFocus.current.reporting = false;
+                  }
+                  invalidFocus.current.scheduled = false;
+                });
+              }}
+            >
               {step === 1 ? (
                 <>
                   <h2>Quel sera votre mouvement?</h2>
@@ -857,178 +1148,230 @@ function Registration() {
                   {people.map((p, i) => {
                     const activity = data.activities.find((a) => a.id === p.activityId);
                     return (
-                      <fieldset className="participant-fields" key={i}>
-                        <legend>
-                          {i + 1}. {activity.name} · {activity.distance}
-                        </legend>
-                        <div className="form-grid">
-                          <Field label="Prénom">
-                            <input
-                              required
-                              maxLength={150}
-                              value={p.firstName}
-                              onChange={(e) => change(i, 'firstName', e.target.value)}
-                              autoComplete="given-name"
-                            />
-                          </Field>
-                          <Field label="Nom">
-                            <input
-                              required
-                              maxLength={150}
-                              value={p.lastName}
-                              onChange={(e) => change(i, 'lastName', e.target.value)}
-                              autoComplete="family-name"
-                            />
-                          </Field>
-                          <Field label="Courriel du participant">
-                            <input
-                              required
-                              type="email"
-                              value={p.email}
-                              onChange={(e) => change(i, 'email', e.target.value)}
-                              autoComplete="email"
-                            />
-                          </Field>
-                          <Field label="Téléphone">
-                            <input
-                              required
-                              type="tel"
-                              minLength={7}
-                              maxLength={35}
-                              value={p.phone}
-                              onChange={(e) => change(i, 'phone', e.target.value)}
-                              autoComplete="tel"
-                            />
-                          </Field>
-                          <Field label="Contact d’urgence · nom">
-                            <input
-                              required
-                              maxLength={150}
-                              value={p.emergencyName}
-                              onChange={(e) => change(i, 'emergencyName', e.target.value)}
-                            />
-                          </Field>
-                          <Field label="Contact d’urgence · téléphone">
-                            <input
-                              required
-                              type="tel"
-                              minLength={7}
-                              maxLength={35}
-                              value={p.emergencyPhone}
-                              onChange={(e) => change(i, 'emergencyPhone', e.target.value)}
-                            />
-                          </Field>
-                        </div>
-                        <DynamicFields
-                          fields={activity.fields}
-                          answers={p.answers}
-                          onChange={(answers: any) => change(i, 'answers', answers)}
-                        />
-                        {activity.sport === 'velo' ? (
+                      <details
+                        className="participant-entry"
+                        key={i}
+                        data-participant={i}
+                        open={expandedParticipant === i}
+                        onToggle={(e) => {
+                          if (e.currentTarget.open) setExpandedParticipant(i);
+                          else setExpandedParticipant((current) => (current === i ? -1 : current));
+                        }}
+                      >
+                        <summary>
+                          <span>
+                            {p.firstName || 'Participant ' + (i + 1)} {p.lastName}
+                            <small>
+                              {sportLabel(activity.sport)} · {activity.distance}
+                            </small>
+                          </span>
+                          <span
+                            className={
+                              participantComplete(p, activity)
+                                ? 'participant-complete'
+                                : 'participant-incomplete'
+                            }
+                          >
+                            {participantComplete(p, activity) ? '✓ Complété' : 'À compléter'}
+                          </span>
+                        </summary>
+                        <fieldset className="participant-fields">
+                          <legend>
+                            {i + 1}. {activity.name} · {activity.distance}
+                          </legend>
+                          {i > 0 && (
+                            <div className="actions copy-fields">
+                              <button
+                                type="button"
+                                className="text-link"
+                                onClick={() => {
+                                  change(i, 'emergencyName', people[0].emergencyName);
+                                  change(i, 'emergencyPhone', people[0].emergencyPhone);
+                                }}
+                              >
+                                Copier le contact d’urgence de{' '}
+                                {people[0].firstName || 'la première personne'}
+                              </button>
+                              <button
+                                type="button"
+                                className="text-link"
+                                onClick={() => change(i, 'phone', people[0].phone)}
+                              >
+                                Utiliser le même téléphone
+                              </button>
+                            </div>
+                          )}
+                          <div className="form-grid">
+                            <Field label="Prénom">
+                              <input
+                                required
+                                maxLength={150}
+                                value={p.firstName}
+                                onChange={(e) => change(i, 'firstName', e.target.value)}
+                                autoComplete="given-name"
+                              />
+                            </Field>
+                            <Field label="Nom">
+                              <input
+                                required
+                                maxLength={150}
+                                value={p.lastName}
+                                onChange={(e) => change(i, 'lastName', e.target.value)}
+                                autoComplete="family-name"
+                              />
+                            </Field>
+                            <Field label="Courriel du participant">
+                              <input
+                                required
+                                type="email"
+                                value={p.email}
+                                onChange={(e) => change(i, 'email', e.target.value)}
+                                autoComplete="email"
+                              />
+                            </Field>
+                            <Field label="Téléphone">
+                              <input
+                                required
+                                type="tel"
+                                minLength={7}
+                                maxLength={35}
+                                value={p.phone}
+                                onChange={(e) => change(i, 'phone', e.target.value)}
+                                autoComplete="tel"
+                              />
+                            </Field>
+                            <Field label="Contact d’urgence · nom">
+                              <input
+                                required
+                                maxLength={150}
+                                value={p.emergencyName}
+                                onChange={(e) => change(i, 'emergencyName', e.target.value)}
+                              />
+                            </Field>
+                            <Field label="Contact d’urgence · téléphone">
+                              <input
+                                required
+                                type="tel"
+                                minLength={7}
+                                maxLength={35}
+                                value={p.emergencyPhone}
+                                onChange={(e) => change(i, 'emergencyPhone', e.target.value)}
+                              />
+                            </Field>
+                          </div>
+                          <DynamicFields
+                            fields={activity.fields}
+                            answers={p.answers}
+                            onChange={(answers: any) => change(i, 'answers', answers)}
+                          />
+                          {activity.sport === 'velo' ? (
+                            <label className="checkbox">
+                              <input
+                                type="checkbox"
+                                checked={p.adult === true}
+                                required
+                                onChange={(e) => change(i, 'adult', e.target.checked)}
+                              />
+                              Cette personne aura au moins 18 ans le jour de l’événement.
+                            </label>
+                          ) : (
+                            <Field label="Âge de cette personne le jour de l’événement">
+                              <select
+                                required
+                                value={
+                                  p.adult === true ? 'adult' : p.adult === false ? 'minor' : ''
+                                }
+                                onChange={(e) =>
+                                  change(
+                                    i,
+                                    'adult',
+                                    e.target.value === '' ? null : e.target.value === 'adult',
+                                  )
+                                }
+                              >
+                                <option value="">Choisissez</option>
+                                <option value="adult">18 ans ou plus</option>
+                                <option value="minor">
+                                  Moins de 18 ans — autorisation parentale requise
+                                </option>
+                              </select>
+                            </Field>
+                          )}
                           <label className="checkbox">
                             <input
                               type="checkbox"
-                              checked={p.adult === true}
+                              checked={p.authority}
                               required
-                              onChange={(e) => change(i, 'adult', e.target.checked)}
+                              onChange={(e) => change(i, 'authority', e.target.checked)}
                             />
-                            Cette personne aura au moins 18 ans le jour de l’événement.
+                            Je suis cette personne ou j’ai son autorisation pour l’inscrire et
+                            transmettre ses consentements.
                           </label>
-                        ) : (
-                          <Field label="Âge de cette personne le jour de l’événement">
-                            <select
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={p.conditions}
                               required
-                              value={p.adult === true ? 'adult' : p.adult === false ? 'minor' : ''}
-                              onChange={(e) =>
-                                change(
-                                  i,
-                                  'adult',
-                                  e.target.value === '' ? null : e.target.value === 'adult',
-                                )
-                              }
-                            >
-                              <option value="">Choisissez</option>
-                              <option value="adult">18 ans ou plus</option>
-                              <option value="minor">
-                                Moins de 18 ans — autorisation parentale requise
-                              </option>
-                            </select>
-                          </Field>
-                        )}
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            checked={p.authority}
-                            required
-                            onChange={(e) => change(i, 'authority', e.target.checked)}
-                          />
-                          Je suis cette personne ou j’ai son autorisation pour l’inscrire et
-                          transmettre ses consentements.
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            checked={p.conditions}
-                            required
-                            onChange={(e) => change(i, 'conditions', e.target.checked)}
-                          />
-                          J’ai lu et j’accepte les conditions ci-dessous pour cette participation.
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            checked={p.photo}
-                            onChange={(e) => change(i, 'photo', e.target.checked)}
-                          />
-                          J’accepte les photos et vidéos de cette personne pour les communications
-                          de l’événement. (Facultatif)
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            checked={p.marketing}
-                            onChange={(e) => change(i, 'marketing', e.target.checked)}
-                          />
-                          Cette personne souhaite recevoir les communications promotionnelles.
-                          (Facultatif)
-                        </label>
-                        <label className="checkbox">
-                          <input
-                            type="checkbox"
-                            checked={!!p.publicListing}
-                            onChange={(e) => change(i, 'publicListing', e.target.checked)}
-                          />
-                          {publicListingText}
-                          {p.adult === false &&
-                            ' Le parent devra également autoriser cet affichage.'}
-                        </label>
-                        {activity.sport !== 'velo' && p.adult === false && (
-                          <GuardianRequest
-                            participant={p}
-                            onChange={(k, v) => change(i, k, v)}
-                            onCreated={async (id, status) => {
-                              const nextPeople = people.map((person, n) =>
-                                n === i
-                                  ? { ...person, guardianRequestId: id, guardianStatus: status }
-                                  : person,
-                              );
-                              setPeople(nextPeople);
-                              await api('/draft', { participants: nextPeople, promo }, 'PUT');
-                              setDraftMessage(
-                                'La demande et votre brouillon sont enregistrés. Vous pourrez reprendre cette inscription après l’accord du parent.',
-                              );
-                            }}
-                            onSignIn={async () => {
-                              try {
-                                await api('/draft/guest', { participants: people, promo });
-                                go(accountUrl(location.pathname + location.search));
-                              } catch (e) {
-                                setError((e as Error).message);
-                              }
-                            }}
-                          />
-                        )}
-                      </fieldset>
+                              onChange={(e) => change(i, 'conditions', e.target.checked)}
+                            />
+                            J’ai lu et j’accepte les conditions ci-dessous pour cette participation.
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={p.photo}
+                              onChange={(e) => change(i, 'photo', e.target.checked)}
+                            />
+                            J’accepte les photos et vidéos de cette personne pour les communications
+                            de l’événement. (Facultatif)
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={p.marketing}
+                              onChange={(e) => change(i, 'marketing', e.target.checked)}
+                            />
+                            Cette personne souhaite recevoir les communications promotionnelles.
+                            (Facultatif)
+                          </label>
+                          <label className="checkbox">
+                            <input
+                              type="checkbox"
+                              checked={!!p.publicListing}
+                              onChange={(e) => change(i, 'publicListing', e.target.checked)}
+                            />
+                            {publicListingText}
+                            {p.adult === false &&
+                              ' Le parent devra également autoriser cet affichage.'}
+                          </label>
+                          {activity.sport !== 'velo' && p.adult === false && (
+                            <GuardianRequest
+                              participant={p}
+                              onChange={(k, v) => change(i, k, v)}
+                              onCreated={async (id, status) => {
+                                const nextPeople = people.map((person, n) =>
+                                  n === i
+                                    ? { ...person, guardianRequestId: id, guardianStatus: status }
+                                    : person,
+                                );
+                                setPeople(nextPeople);
+                                await api('/draft', { participants: nextPeople, promo }, 'PUT');
+                                setDraftMessage(
+                                  'La demande et votre brouillon sont enregistrés. Vous pourrez reprendre cette inscription après l’accord du parent.',
+                                );
+                              }}
+                              onSignIn={async () => {
+                                try {
+                                  await api('/draft/guest', { participants: people, promo });
+                                  go(accountUrl(location.pathname + location.search));
+                                } catch (e) {
+                                  setError((e as Error).message);
+                                }
+                              }}
+                            />
+                          )}
+                        </fieldset>
+                      </details>
                     );
                   })}
                   <details className="terms-box" open>
@@ -1084,7 +1427,7 @@ function Registration() {
                     <p>
                       {quote?.amount === 0
                         ? 'Cette inscription est gratuite après application du tarif ou de la réduction.'
-                        : 'Le paiement s’effectue sur la page sécurisée Stripe, puis vous revenez ici. La confirmation dépend de la vérification du paiement par le serveur.'}
+                        : 'Le paiement s’effectue sur une page sécurisée. Vous retrouverez ensuite votre confirmation et vos billets ici.'}
                     </p>
                   </Notice>
                   <p className="fee-disclosure">{donationNotice}</p>
@@ -1134,7 +1477,7 @@ function Registration() {
                 return (
                   <div className="summary-line" key={i}>
                     <span>
-                      {a.sport} · {a.distance}
+                      {sportLabel(a.sport)} · {a.distance}
                     </span>
                     <b>{money(a.price)}</b>
                   </div>
@@ -1182,6 +1525,9 @@ function Registration() {
 }
 function Participant() {
   const { user, refresh, data } = useApp();
+  useEffect(() => {
+    if (user && new URLSearchParams(location.search).has('commande')) track('checkout_return');
+  }, [user?.id]);
   const [state, setState] = useState<any>(null),
     [error, setError] = useState(''),
     [ticket, setTicket] = useState<any>(null),
@@ -1294,13 +1640,10 @@ function Participant() {
         </button>
       </div>
       {new URLSearchParams(location.search).has('commande') && (
-        <Notice>
-          Nous vérifions votre paiement. Le statut ci-dessous change seulement après confirmation
-          par Stripe.{' '}
-          <button className="text-link" onClick={load}>
-            Actualiser
-          </button>
-        </Notice>
+        <CheckoutStatus
+          id={new URLSearchParams(location.search).get('commande')!}
+          onConfirmed={load}
+        />
       )}
       {new URLSearchParams(location.search).has('abandon') && (
         <Notice>
@@ -1340,12 +1683,18 @@ function Participant() {
                 <span>Prix de cette participation</span>
                 <strong>{money(r.price)}</strong>
               </div>
-              <div className="summary-line">
-                <span>Dossier complet · paiement / remboursé</span>
-                <strong>
-                  {money(r.order_amount)} / {money(r.refunded)}
-                </strong>
-              </div>
+              <details className="payment-details">
+                <summary>Paiement et reçu du dossier</summary>
+                <div className="summary-line">
+                  <span>Total / remboursé</span>
+                  <strong>
+                    {money(r.order_amount)} / {money(r.refunded)}
+                  </strong>
+                </div>
+                <Link className="text-link" to={'/recu/' + r.order_id}>
+                  Reçu de paiement
+                </Link>
+              </details>
               <details>
                 <summary>
                   Mes réponses et consentements <ChevronDown size={16} />
@@ -1393,7 +1742,7 @@ function Participant() {
                 {['confirmed', 'partially_refunded'].includes(r.status) && (
                   <>
                     <button className="button" onClick={() => showTicket(r.id)}>
-                      Aperçu du QR <Ticket size={17} />
+                      Voir mon QR <Ticket size={17} />
                     </button>
                     <Link className="button light" to={'/billet/' + r.id}>
                       Ouvrir mon billet

@@ -16,10 +16,43 @@ export const editorialSchema = z
   .object({
     heroTitle: z.string().min(1).max(160),
     heroIntro: z.string().max(700),
+    socialLinks: z
+      .array(z.object({ name: z.string().min(1).max(80), url: publicURL }).strict())
+      .max(12)
+      .default([]),
+    media: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(150),
+            title: z.string().min(1).max(200),
+            url: publicURL,
+            logo: optionalURL,
+            quote: z.string().max(500),
+            date: z.string().max(20),
+            enabled: z.boolean(),
+            order: z.number().int().min(0).max(999),
+          })
+          .strict(),
+      )
+      .max(30)
+      .default([]),
+    volunteerRoles: z
+      .array(
+        z.object({ title: z.string().min(1).max(150), description: z.string().max(1500) }).strict(),
+      )
+      .max(20)
+      .default([]),
+    sponsorshipIntro: z.string().max(4000).default(''),
+    sponsorshipOptions: z.array(z.string().min(1).max(500)).max(20).default([]),
     firstEdition: z
       .object({
         title: z.string().min(1).max(150),
         intro: z.string().max(4000),
+        year: z
+          .string()
+          .regex(/^$|^\d{4}$/)
+          .default(''),
         memories: z.array(z.string().max(800)).max(12),
         stats: z
           .array(

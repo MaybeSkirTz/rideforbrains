@@ -1,0 +1,556 @@
+/* Participant-first refinements; existing content and event settings stay authoritative. */
+:root {
+  --cream: #f8f8f4;
+  --paper: #fff;
+  --blue: #185e83;
+}
+.small,
+.eyebrow,
+.section-index,
+.activity-kind,
+.person-role,
+.sport-row-price,
+.steps,
+.status,
+.fee-disclosure,
+.countdown > span,
+.visual-caption,
+.neural-coordinate,
+.dev-banner {
+  font-size: 13px;
+}
+.page-intro,
+.opening-intro,
+.prose p {
+  font-size: 17px;
+}
+label,
+.field-label,
+summary {
+  font-size: 15px;
+}
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+.nav a {
+  font-size: 14px;
+}
+.nav a[aria-current='page'] {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 7px;
+}
+.mobile-register-sticky {
+  display: none;
+}
+.hero-essentials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  margin: 26px 0;
+}
+.hero-essentials strong {
+  font-size: 30px;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+.hero-essentials span {
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 340px;
+}
+.opening-grid {
+  min-height: 850px;
+}
+.opening-copy {
+  padding-top: 48px;
+}
+.opening-copy h1 {
+  font-size: clamp(46px, 4.8vw, 68px);
+}
+.opening-copy h1 em {
+  display: inline-block;
+  margin-top: 18px;
+  font-size: 32px;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+}
+.hero-introduction {
+  margin-top: 22px;
+}
+.hero-introduction summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding-block: 12px;
+  color: var(--muted);
+}
+.hero-memory {
+  width: min(100%, 380px);
+  margin: 34px 0 30px;
+}
+.hero-memory img {
+  width: 100%;
+  height: 165px;
+  object-fit: cover;
+  display: block;
+}
+.hero-memory figcaption {
+  margin-top: 9px;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.activities-narrative {
+  background: #e8eef0;
+  border-top: 3px solid var(--blue);
+}
+.sport-row {
+  grid-template-columns: 38px 1fr 1.1fr auto 30px;
+}
+.sport-row:hover {
+  background: #dde7e8;
+}
+.home-practical {
+  background: #173d45;
+  color: #fff;
+}
+.home-practical span {
+  color: #d6e4e7;
+  font-size: 14px;
+}
+.home-practical strong {
+  font-size: 23px;
+}
+.opening-intro {
+  max-width: 470px;
+}
+.save-status {
+  color: var(--muted);
+  font-size: 14px;
+  min-height: 24px;
+}
+.participant-entry {
+  border-block-start: 1px solid var(--line);
+  margin-block: 18px;
+}
+.participant-entry > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 8px;
+  cursor: pointer;
+  min-height: 64px;
+}
+.participant-entry > summary small {
+  display: block;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+  margin-top: 6px;
+}
+.participant-entry > summary > span:first-child {
+  font-weight: 600;
+  font-size: 19px;
+}
+.participant-entry > summary::after {
+  content: '+';
+  font-size: 25px;
+}
+.participant-entry[open] > summary::after {
+  content: '−';
+}
+.participant-entry > summary .participant-complete {
+  color: #21614b;
+  font-size: 14px;
+}
+.participant-entry > summary .participant-incomplete {
+  color: #775016;
+  font-size: 14px;
+}
+.participant-entry .participant-fields {
+  margin: 0;
+  border: 0;
+  padding: 20px 0 26px;
+  min-width: 0;
+}
+.participant-entry .participant-fields > legend {
+  font-size: 16px;
+  padding: 0;
+}
+.copy-fields {
+  gap: 12px 24px;
+  margin: 0 0 20px;
+}
+.copy-fields button {
+  text-align: left;
+}
+.copy-fields .text-link {
+  font-size: 14px;
+}
+.route-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 35px;
+  margin-block: 22px;
+}
+.route-facts:empty {
+  display: none;
+}
+.route-facts dt {
+  color: var(--muted);
+  font-size: 14px;
+}
+.route-facts dd {
+  margin: 6px 0 0;
+  font-size: 18px;
+}
+.payment-details {
+  margin: 20px 0;
+  padding: 15px 0;
+  border-block: 1px solid var(--line);
+}
+.payment-details summary {
+  cursor: pointer;
+  min-height: 44px;
+}
+.registration-card h2 {
+  font-size: 30px;
+}
+.registration-card-heading {
+  margin-bottom: 18px;
+}
+.registration-card > .actions {
+  margin-top: 26px;
+}
+.registration-card > .actions .button {
+  min-height: 48px;
+}
+.payment-receipt {
+  max-width: 820px;
+  background: #fff;
+  padding: 32px;
+  border: 1px solid var(--line);
+}
+.payment-receipt table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.payment-receipt caption {
+  text-align: left;
+  font-size: 20px;
+  margin: 24px 0 15px;
+}
+.payment-receipt th,
+.payment-receipt td {
+  text-align: left;
+  padding: 16px 8px;
+  border-block-end: 1px solid var(--line);
+}
+.payment-receipt dl > div {
+  display: flex;
+  gap: 25px;
+  justify-content: space-between;
+  margin-block: 16px;
+}
+.payment-receipt dd {
+  margin: 0;
+}
+.launch-review {
+  padding: 25px;
+  border: 1px solid var(--line);
+  margin-block: 25px;
+  min-width: 0;
+}
+.launch-review legend {
+  font-weight: 600;
+}
+.media-coverage {
+  margin-block: 70px;
+}
+.media-coverage article {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 30px;
+  padding: 30px 0;
+  border-top: 1px solid var(--line);
+}
+.media-coverage article > div:first-child {
+  grid-column: 1/-1;
+}
+.media-coverage h3 {
+  font-size: 26px;
+}
+.media-coverage a {
+  text-decoration: underline;
+  text-underline-offset: 5px;
+}
+.media-coverage img {
+  object-fit: contain;
+}
+.social-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 20px;
+  margin-top: 18px;
+}
+.footer-grid a:not(.footer-brand) {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 15px;
+}
+.footer-grid span,
+.footer-grid p,
+.footer-grid .small,
+.footer-top .eyebrow,
+.footer-bottom,
+.footer-disclosure {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.footer-grid {
+  gap: 32px;
+}
+.footer-grid .footer-brand {
+  font-size: 25px;
+}
+.route-map-canvas .leaflet-control-attribution {
+  font-size: 12px;
+}
+@media (min-width: 901px) {
+  .site-header-shell {
+    height: 102px;
+  }
+  .header.is-pinned {
+    position: fixed;
+    inset: 0 0 auto;
+    height: 76px;
+    width: 100%;
+    z-index: 20;
+    box-shadow: 0 1px 14px #092b3914;
+  }
+  .header.is-pinned .brand img {
+    width: 44px;
+    height: 44px;
+  }
+  .header.is-pinned .nav-cta {
+    min-height: 44px;
+  }
+}
+@media (max-width: 1100px) and (min-width: 901px) {
+  .header {
+    gap: 16px;
+    padding-inline: 3%;
+  }
+  .header .nav {
+    gap: 14px;
+  }
+  .header .nav a {
+    font-size: 13px;
+  }
+  .header .brand {
+    min-width: 148px;
+  }
+}
+@media (max-width: 900px) {
+  .header > .nav-cta {
+    display: none;
+  }
+  .header {
+    justify-content: space-between;
+    gap: 15px;
+  }
+  .menu-toggle {
+    margin-left: auto;
+  }
+  .mobile-account-bar {
+    padding-block: 0 12px;
+  }
+  .mobile-account-bar > a {
+    font-size: 14px;
+    background: #e4ecee;
+  }
+  .mobile-register-sticky {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 64px;
+    background: #143e47;
+    color: #fff;
+    padding: 16px 6% calc(16px + env(safe-area-inset-bottom));
+    border-top: 1px solid #ffffff36;
+    font-size: 16px;
+    font-weight: 600;
+    box-shadow: 0 -4px 20px #092b3912;
+  }
+  body:has(.mobile-register-sticky) {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+  body:has(.mobile-register-sticky) .motion-preference {
+    bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  .nav.open {
+    max-height: calc(100dvh - 100px);
+    overflow-y: auto;
+  }
+  .nav.open a {
+    min-height: 44px;
+  }
+  .opening-grid {
+    min-height: auto;
+  }
+  .opening-copy h1 {
+    font-size: clamp(43px, 11vw, 66px);
+  }
+  .opening-copy h1 em {
+    font-size: 26px;
+  }
+  .hero-essentials {
+    align-items: flex-start;
+    gap: 15px;
+  }
+  .hero-essentials strong {
+    font-size: 28px;
+  }
+  .hero-essentials span {
+    font-size: 14px;
+  }
+  .hero-memory {
+    max-width: 100%;
+  }
+  .opening-visual {
+    height: 360px;
+  }
+  .opening-visual > .neural-scene {
+    min-height: 280px;
+  }
+  .opening-bottom {
+    margin-top: 30px;
+  }
+  .sport-row-heading h3 {
+    font-size: 32px;
+  }
+  .sport-row {
+    gap: 14px;
+  }
+  .sport-index,
+  .sport-row-heading > span,
+  .sport-row-price {
+    font-size: 14px;
+  }
+  .hero-dateline {
+    font-size: 13px;
+    align-items: flex-start;
+  }
+  .hero-dateline > span,
+  .hero-dateline > span:last-child {
+    font-size: 13px;
+    max-width: none;
+  }
+  .participant-entry > summary {
+    gap: 10px;
+  }
+  .participant-entry > summary > span:first-child {
+    font-size: 18px;
+  }
+  .payment-receipt {
+    padding: 20px 14px;
+  }
+  .payment-receipt td,
+  .payment-receipt th {
+    font-size: 14px;
+    padding-inline: 3px;
+  }
+  .payment-receipt > p {
+    overflow-wrap: anywhere;
+  }
+  .media-coverage article {
+    grid-template-columns: 1fr;
+  }
+  .registration-card {
+    padding: 24px 18px;
+  }
+  .registration-card h2 {
+    font-size: 27px;
+  }
+  .fee-disclosure,
+  .small {
+    font-size: 14px;
+  }
+}
+@media (max-width: 500px) {
+  .sport-row {
+    grid-template-columns: 22px 1fr auto 20px;
+  }
+  .sport-row-price {
+    grid-column: 3;
+  }
+  .sport-mini-scene {
+    display: none;
+  }
+  .sport-arrow {
+    grid-column: 4;
+    width: 20px;
+  }
+  .steps {
+    gap: 8px;
+    font-size: 13px;
+  }
+  .steps li {
+    font-size: 13px;
+  }
+  .hero-dateline {
+    gap: 18px;
+  }
+  .hero-dateline > span:last-child {
+    text-align: right;
+  }
+  .participant-entry > summary {
+    flex-wrap: wrap;
+  }
+  .participant-entry > summary > span:first-child {
+    flex: 1 1 58%;
+  }
+  .participant-entry > summary::after {
+    margin-left: auto;
+  }
+  .participant-complete,
+  .participant-incomplete {
+    order: 2;
+    flex-basis: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@media print {
+  .site-header-shell,
+  .mobile-account-bar,
+  .mobile-register-sticky,
+  .payment-receipt .actions {
+    display: none !important;
+  }
+  .payment-receipt {
+    border: 0;
+    padding: 0;
+  }
+  body:has(.mobile-register-sticky) {
+    padding-bottom: 0;
+  }
+}

@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { api, money } from './api';
 const labels: Record<string, string> = {
   visit: 'Visites',
+  home_view: 'Accueil consulté',
+  account_step: 'Étape du compte',
+  registration_form_complete: 'Formulaires terminés',
+  checkout_return: 'Retours de paiement',
+  registration_confirmed: 'Participations confirmées',
   activity_view: 'Activités consultées',
   registration_start: 'Inscriptions commencées',
   account_request: 'Demandes de connexion',
@@ -11,7 +16,10 @@ const labels: Record<string, string> = {
   payment_confirmed: 'Paiements confirmés',
   confirmed: 'Confirmés',
   refunded: 'Remboursés',
+  partially_refunded: 'Partiellement remboursés',
   refunding: 'Remboursements en cours',
+  cancelled: 'Annulés',
+  paid_review: 'Paiements à vérifier',
   expired: 'Expirés / abandonnés',
   pending: 'En attente',
   delivered: 'Livrés',
@@ -19,6 +27,11 @@ const labels: Record<string, string> = {
   accepted: 'Acceptés par le fournisseur',
   failed: 'Échecs',
   development: 'Envois locaux',
+  queued: 'En file d’attente',
+  sending: 'Envoi en cours',
+  retry: 'Nouvelle tentative prévue',
+  review: 'Vérification nécessaire',
+  unsubscribed: 'Désabonnés',
 };
 function Bars({
   title,

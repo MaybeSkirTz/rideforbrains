@@ -12,11 +12,11 @@ export function clientModules() {
     access: 'shared/admin-access.ts',
     album: 'src/PhotoAlbum.tsx',
     routeGeometry: 'shared/route-map.ts',
+    motion: 'shared/motion.ts',
   })) {
-    const source = readFileSync(path, 'utf8').replaceAll(
-      "'../shared/admin-access'",
-      "'./access.mjs'",
-    );
+    const source = readFileSync(path, 'utf8')
+      .replaceAll("'../shared/admin-access'", "'./access.mjs'")
+      .replaceAll("'../shared/motion'", "'./motion.mjs'");
     const { outputText } = ts.transpileModule(source, {
       compilerOptions: {
         module: ts.ModuleKind.ESNext,

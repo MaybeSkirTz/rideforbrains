@@ -1,19 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { storedMotionOff, setMotionOff } from '../shared/motion';
 export default function MotionToggle() {
-  const [reduced, setReduced] = useState(() => localStorage.getItem('rfb-motion') === 'off');
+  const [reduced, setReduced] = useState(storedMotionOff),
+    [systemReduced, setSystemReduced] = useState(
+      () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+    );
+  useEffect(() => {
+    const media = matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setSystemReduced(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   return (
     <button
       className="text-link"
       type="button"
-      aria-pressed={reduced}
+      aria-pressed={reduced || systemReduced}
+      disabled={systemReduced}
       onClick={() => {
         const next = !reduced;
-        localStorage.setItem('rfb-motion', next ? 'off' : 'on');
+        setMotionOff(next);
         setReduced(next);
-        dispatchEvent(new Event('rfb-motion'));
       }}
     >
-      {reduced ? 'Animations réduites · réactiver' : 'Réduire les animations'}
+      {systemReduced
+        ? 'Animations réduites selon votre appareil'
+        : reduced
+          ? 'Animations réduites · réactiver'
+          : 'Réduire les animations'}
     </button>
   );
 }

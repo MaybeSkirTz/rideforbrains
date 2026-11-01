@@ -9,13 +9,32 @@ export const practicalSections = [
   ['abandon', 'Abandon'],
   ['urgence', 'Urgence'],
   ['jour-j', 'Questions du jour J'],
+  ['acces', 'Accès et transports'],
+  ['toilettes', 'Toilettes'],
+  ['arrivee', 'Arrivée'],
+  ['services', 'Services sur place'],
 ] as const;
 export const defaultEditorial = {
   heroTitle: 'Le mouvement\nnous relie.',
   heroIntro: 'On se retrouve à vélo, à la course ou à la marche pour Ride For Brains.',
+  socialLinks: [] as { name: string; url: string }[],
+  media: [] as {
+    name: string;
+    title: string;
+    url: string;
+    logo: string;
+    quote: string;
+    date: string;
+    enabled: boolean;
+    order: number;
+  }[],
+  volunteerRoles: [] as { title: string; description: string }[],
+  sponsorshipIntro: '',
+  sponsorshipOptions: [] as string[],
   firstEdition: {
     title: 'Là où tout a commencé.',
     intro: '',
+    year: '',
     memories: [] as string[],
     stats: [] as { label: string; value: string }[],
     press: [] as { title: string; url: string }[],

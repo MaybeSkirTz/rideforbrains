@@ -1,8 +1,14 @@
 # Vérifications de la refonte 2027
 
-La campagne actuelle et ses mesures sont décrites dans [AUDIT-2027.md](AUDIT-2027.md). Les résultats synthétiques sont dans [TEST-RESULTS.txt](TEST-RESULTS.txt). Les prestataires sont simulés; les tests ne prouvent pas une transaction réelle, une livraison à Hotmail ou une lecture caméra sur téléphone physique.
+## Campagne du 1er novembre 2026
 
-## Campagne actuelle : accueil, promotions, liste publique, équipe et courriels
+**146 tests réussis, zéro échec et zéro test ignoré**, après une référence de 129 tests avant modification. TypeScript, build client/Worker, préparation Wrangler sans publication et audit npm (zéro vulnérabilité) réussis. La [livraison actuelle](LIVRAISON-NOVEMBRE-2026.md) décrit les nouveaux contrats, la recette mobile/ordinateur, la migration additive, les limites matérielles et la checklist. [Résultats détaillés](TEST-RESULTS.txt).
+
+Les sections suivantes conservent l’historique des campagnes précédentes; leurs nombres et captures correspondent à leur date.
+
+La première refonte et ses mesures sont décrites dans [AUDIT-2027.md](AUDIT-2027.md). Les résultats synthétiques actuels sont dans [TEST-RESULTS.txt](TEST-RESULTS.txt). Les prestataires sont simulés; les tests ne prouvent pas une transaction réelle, une livraison à Hotmail ou une lecture caméra sur téléphone physique.
+
+## Campagne précédente : accueil, promotions, liste publique, équipe et courriels
 
 Les **129 tests passent**. La migration archive les anciens codes consommés, distingue les réservations temporaires et conserve une utilisation après remboursement ou retrait. Les listes publiques ne renvoient que les noms autorisés et confirmés, avec consentement parental lié au choix exact pour un mineur. Les coordonnées, identifiants de dossier et billets restent privés; les changements d’identité et transferts ne recyclent pas le consentement d’une autre personne.
 

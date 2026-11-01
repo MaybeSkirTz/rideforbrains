@@ -3,6 +3,8 @@ import RouteEditor from './RouteEditor';
 import OfflineCheckin from './OfflineCheckin';
 import AdminInsights from './AdminInsights';
 import SubmissionDetails from './SubmissionDetails';
+import EmailCorrection from './EmailCorrection';
+import LaunchReview from './LaunchReview';
 import ContentEditor from './ContentEditor';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -487,6 +489,7 @@ function Participants(
             {detail.email} · commande {detail.order_id}
           </p>
           <span className={'status ' + detail.status}>{statuses[detail.status]}</span>
+          <EmailCorrection key={detail.id} id={detail.id} current={detail.email} />
           <form onSubmit={save} className="admin-section">
             <div className="form-grid">
               {[
@@ -798,6 +801,7 @@ function Settings({ setError, setMessage }: Feedback) {
         </details>
         <details className="settings-details">
           <summary>Conditions, confidentialité et validations</summary>
+          <LaunchReview settings={s} change={change} />
           <Field label="Version des conditions (à changer pour chaque modification)">
             <input
               value={s.termsVersion}
@@ -1012,6 +1016,29 @@ function ActivityEditor({ activity, saved, setError }: any) {
             onChange={(e) => set('route', { ...a.route, description: e.target.value })}
           />
         </Field>
+        <div className="form-grid">
+          {[
+            ['departure', 'Heure de départ confirmée'],
+            ['elevationGain', 'Dénivelé positif confirmé (m)'],
+            ['startLabel', 'Point de départ'],
+            ['finishLabel', 'Point d’arrivée'],
+          ].map(([key, label]) => (
+            <Field key={key} label={label}>
+              <input
+                type={key === 'departure' ? 'time' : key === 'elevationGain' ? 'number' : 'text'}
+                min={key === 'elevationGain' ? 0 : undefined}
+                value={a.route[key] ?? ''}
+                onChange={(e) => {
+                  const route = { ...a.route };
+                  if (e.target.value)
+                    route[key] = key === 'elevationGain' ? Number(e.target.value) : e.target.value;
+                  else delete route[key];
+                  set('route', route);
+                }}
+              />
+            </Field>
+          ))}
+        </div>
         {[
           ['mapUrl', 'Lien vers la carte'],
           ['gpxUrl', 'Lien de téléchargement GPX'],

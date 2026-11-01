@@ -22,6 +22,8 @@ import { countEvent, funnelEvents } from './analytics';
 import type { AppContext, Env, Actor } from './types';
 import { isLocal, uuid, now, json, parse } from './types';
 import { passwordAuthRoutes, authenticatedSession } from './password-auth';
+import { personalTicketRoutes, ticketDelivery, deliverMissingTickets } from './personal-tickets';
+import { launchIssues } from '../shared/launch';
 import {
   orderSchema,
   validateAnswers,
@@ -223,6 +225,9 @@ app.get('/api/public', async (c) => {
   return c.json({
     settings: {
       ...s,
+      registrationOpen:
+        !!s.registrationOpen &&
+        (isLocal(c.env) || c.env.PAYMENTS_MODE !== 'live' || launchIssues(s).length === 0),
       editorial: editorial(s),
       faq: published(s.faq),
       partners: published(s.partners),
@@ -304,6 +309,7 @@ app.post('/api/quote', async (c) => {
   return c.json({ subtotal, amount, discount: subtotal - amount, percent });
 });
 const draftSchema = z.object({
+  step: z.number().int().min(1).max(3).optional(),
   participants: z
     .array(
       z
@@ -333,6 +339,23 @@ const draftSchema = z.object({
     .max(12),
   promo: z.string().max(40),
 });
+app.get('/api/draft/guest', async (c) => {
+  const token = getCookie(c, 'rfb_guest_draft');
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return c.json(null);
+  const row = await c.env.DB.prepare(
+    'SELECT ciphertext,expires_at FROM guest_drafts WHERE token_hash=? AND expires_at>unixepoch()',
+  )
+    .bind(await digest(token))
+    .first<any>();
+  return c.json(
+    row
+      ? {
+          ...draftSchema.parse(await unseal(row.ciphertext, c.env.BETTER_AUTH_SECRET)),
+          expiresAt: row.expires_at,
+        }
+      : null,
+  );
+});
 app.get('/api/draft', async (c) => {
   const a = await actor(c);
   let r = await c.env.DB.prepare('SELECT data,updated_at FROM drafts WHERE user_id=?')
@@ -357,11 +380,14 @@ app.get('/api/draft', async (c) => {
       if (claimed[0].meta.changes) r = { data: json(draft), updated_at: now() };
     }
     deleteCookie(c, 'rfb_guest_draft', { path: '/api' });
+    r = await c.env.DB.prepare('SELECT data,updated_at FROM drafts WHERE user_id=?')
+      .bind(a.id)
+      .first<any>();
   }
   return c.json(r ? { ...parse(r.data), updatedAt: r.updated_at } : null);
 });
 app.post('/api/draft/guest', async (c) => {
-  await limited(c.env, 'guest-draft:' + (c.req.header('cf-connecting-ip') || 'local'), 8, 600);
+  await limited(c.env, 'guest-draft:' + (c.req.header('cf-connecting-ip') || 'local'), 150, 600);
   const draft = draftSchema.parse(await c.req.json());
   if (json(draft).length > 30000) fail(413, 'Le brouillon est trop volumineux.');
   for (const p of draft.participants) {
@@ -391,7 +417,7 @@ app.post('/api/draft/guest', async (c) => {
 app.post('/api/analytics', async (c) => {
   const input = z
     .object({
-      event: z.enum(funnelEvents).exclude(['payment_confirmed']),
+      event: z.enum(funnelEvents).exclude(['payment_confirmed', 'registration_confirmed']),
       activityId: z.string().max(50).optional(),
     })
     .strict()
@@ -446,11 +472,7 @@ app.post('/api/orders', async (c) => {
       (s.salesCloseAt && now() >= s.salesCloseAt))
   )
     fail(409, 'Les inscriptions ne sont pas ouvertes.');
-  if (
-    !isLocal(c.env) &&
-    c.env.PAYMENTS_MODE === 'live' &&
-    (!s.legalApproved || !s.brandApproved || s.taxMode === 'unconfirmed' || !s.location)
-  )
+  if (!isLocal(c.env) && c.env.PAYMENTS_MODE === 'live' && launchIssues(s).length > 0)
     fail(409, 'L’ouverture publique nécessite la validation des informations et des politiques.');
   let percent = 0;
   let promo: null | string = null;
@@ -537,6 +559,14 @@ app.post('/api/orders', async (c) => {
         edition: s.edition,
         reception: s.reception,
         location: s.location,
+        policies: s.launchReview
+          ? {
+              cancellation: s.launchReview.cancellation,
+              postponement: s.launchReview.postponement,
+              weather: s.launchReview.weather,
+              forceMajeure: s.launchReview.forceMajeure,
+            }
+          : undefined,
       }),
     ),
   ];
@@ -590,21 +620,28 @@ app.post('/api/orders', async (c) => {
     );
     if (amount === 0)
       stmts.push(
-        mailStatement(
+        ...(await ticketDelivery(
           c.env,
-          p.email,
-          'Inscription confirmée — Ride For Brains',
-          `Bonjour ${p.firstName},\nVotre inscription ${r.id} est confirmée. Retrouvez votre billet dans l’espace de l’acheteur : ${c.env.APP_URL}/espace`,
+          {
+            id: r.id,
+            ticket: r.ticket,
+            email: p.email,
+            first_name: p.firstName,
+            activity_name: activity.name,
+            distance: activity.distance,
+          },
+          a.name,
           'confirmed:' + r.id,
-          a.id,
-          r.id,
-        ),
+        )),
       );
   }
   stmts.push(audit(c.env, a.id, 'order.created', id, { amount, count: records.length }));
   stmts.push(c.env.DB.prepare('DELETE FROM drafts WHERE user_id=?').bind(a.id));
   await c.env.DB.batch(stmts);
-  if (amount === 0) c.executionCtx.waitUntil(processMail(c.env));
+  if (amount === 0) {
+    c.executionCtx.waitUntil(processMail(c.env));
+    c.executionCtx.waitUntil(countEvent(c.env, 'registration_confirmed'));
+  }
   return c.json({ id, status, amount }, 201);
 });
 app.post('/api/orders/:id/checkout', async (c) => {
@@ -696,6 +733,7 @@ app.get('/api/registrations/:id/ticket', async (c) => {
   if (!r) fail(404, 'Billet indisponible');
   return c.json({ ...r, ...parse(r.activity_snapshot), event: parse(r.event_snapshot) });
 });
+personalTicketRoutes(app, adminApi, { actor, staffActor, audit, fail, limited });
 app.post('/api/orders/:id/cancel', async (c) => {
   const a = await actor(c);
   const s = await settings(c.env);
@@ -806,12 +844,23 @@ app.post('/api/submissions', async (c) => {
       message: z.string().trim().min(10).max(5000),
       consent: z.literal(true),
       turnstileToken: z.string().optional(),
+      details: z
+        .object({
+          phone: z.string().max(35).optional(),
+          availability: z.string().max(1000).optional(),
+          preferredRole: z.string().max(150).optional(),
+          company: z.string().max(150).optional(),
+        })
+        .strict()
+        .optional(),
     })
     .parse(await c.req.json());
   await botCheck(c, body.turnstileToken);
   const id = uuid();
-  await c.env.DB.prepare('INSERT INTO submissions(id,kind,name,email,message) VALUES(?,?,?,?,?)')
-    .bind(id, body.kind, body.name, body.email, body.message)
+  await c.env.DB.prepare(
+    'INSERT INTO submissions(id,kind,name,email,message,details) VALUES(?,?,?,?,?,?)',
+  )
+    .bind(id, body.kind, body.name, body.email, body.message, json(body.details || {}))
     .run();
   return c.json(
     { id, message: 'Votre demande est enregistrée et accessible à l’organisation.' },
@@ -1027,12 +1076,19 @@ adminApi.put('/settings', async (c) => {
     .object({ settings: settingsSchema, revision: z.number().int() })
     .parse(await c.req.json());
   const before = await settings(c.env);
-  if (before.terms !== body.settings.terms && before.termsVersion === body.settings.termsVersion)
+  if (
+    (before.terms !== body.settings.terms ||
+      (['cancellation', 'postponement', 'weather', 'forceMajeure'] as const).some(
+        (key) => (before.launchReview?.[key] || '') !== (body.settings.launchReview?.[key] || ''),
+      )) &&
+    before.termsVersion === body.settings.termsVersion
+  )
     fail(409, 'Changez la version des conditions quand leur texte change.');
   if (
     body.settings.registrationOpen &&
     c.env.PAYMENTS_MODE === 'live' &&
-    (!body.settings.legalApproved ||
+    (launchIssues(body.settings).length > 0 ||
+      !body.settings.legalApproved ||
       !body.settings.brandApproved ||
       body.settings.taxMode === 'unconfirmed' ||
       !body.settings.location ||
@@ -1336,7 +1392,13 @@ adminApi.get('/mail', async (c) => {
       await c.env.DB.prepare(
         "SELECT id,recipient,subject,body,kind,status,attempts,error,available_at,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND kind NOT IN ('login','guardian') AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 200",
       ).all()
-    ).results,
+    ).results.map((row: any) => ({
+      ...row,
+      body: String(row.body).replace(
+        /\/(billet-personnel|confirmer-courriel)#[a-f0-9]{64}/g,
+        '/$1#[lien personnel masqué]',
+      ),
+    })),
   );
 });
 adminApi.get('/templates', async (c) => {
@@ -1500,21 +1562,28 @@ ownerApi.get('/audit', async (c) => {
 adminApi.post('/resend/:id', async (c) => {
   const a = await staffActor(c, 'communications');
   const r = await c.env.DB.prepare(
-    "SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id FROM visible_registrations r JOIN orders o ON o.id=r.order_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
+    "SELECT r.*,COALESCE(r.transferred_user_id,o.user_id) AS user_id,u.name AS buyer_name FROM visible_registrations r JOIN orders o ON o.id=r.order_id JOIN user u ON u.id=o.user_id WHERE r.id=? AND r.status IN ('confirmed','partially_refunded')",
   )
     .bind(c.req.param('id'))
     .first<any>();
   if (!r) fail(404, 'Dossier confirmé introuvable');
+  if (
+    await c.env.DB.prepare(
+      "SELECT 1 FROM participant_email_changes WHERE registration_id=? AND status='pending' AND expires_at>unixepoch()",
+    )
+      .bind(r.id)
+      .first()
+  )
+    fail(409, 'Une correction de courriel attend la confirmation du nouveau destinataire.');
   await c.env.DB.batch([
-    mailStatement(
+    ...(await ticketDelivery(
       c.env,
-      r.email,
-      'Rappel de confirmation — Ride For Brains',
-      `Bonjour ${r.first_name},\nVotre dossier ${r.id} est confirmé. Espace de l’acheteur : ${c.env.APP_URL}/espace`,
+      { ...r, ...parse(r.activity_snapshot) },
+      r.buyer_name,
       'resend:' + uuid(),
-      r.user_id,
-      r.id,
-    ),
+      'Rappel de confirmation — Ride For Brains',
+      true,
+    )),
     audit(c.env, a.id, 'confirmation.queued', r.id),
   ]);
   c.executionCtx.waitUntil(processMail(c.env));
@@ -1637,6 +1706,7 @@ export async function scheduled(env: Env) {
       },
     ],
     ['checkout_cleanup', () => closeRemovedCheckouts(env)],
+    ['personal_tickets', () => deliverMissingTickets(env)],
     ['refunds', () => processRefunds(env)],
     ['mail', () => processMail(env)],
   ] as const;

@@ -4,6 +4,8 @@ import type { Env } from './types';
 import { now, uuid, isLocal } from './types';
 import { mailStatement } from './mail';
 import { cad, confirmationMails, removalContacts } from './removal-notifications';
+import { ticketDelivery } from './personal-tickets';
+import { digest } from './crypto';
 
 export function stripe(env: Env) {
   if (!env.STRIPE_SECRET_KEY) throw new Error('Stripe non configuré');
@@ -192,17 +194,22 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
         env.DB.prepare(
           "UPDATE registrations SET status='confirmed' WHERE order_id=? AND status IN ('pending','failed','expired')",
         ).bind(order.id),
-        ...regs.map((r) =>
-          mailStatement(
-            env,
-            r.email,
-            'Inscription confirmée — Ride For Brains',
-            `Bonjour ${r.first_name},\n\nVotre inscription ${r.id} est confirmée.\nRetrouvez les renseignements et le billet dans l’espace de l’acheteur : ${env.APP_URL}/espace\n\nLes dons à Brain Canada sont distincts des frais d’inscription.`,
-            'confirmed:' + r.id,
-            order.user_id,
-            r.id,
-          ),
-        ),
+        ...(
+          await Promise.all(
+            regs.map(async (r) =>
+              ticketDelivery(
+                env,
+                { ...r, ...JSON.parse(r.activity_snapshot || '{}') },
+                (
+                  await env.DB.prepare('SELECT name FROM user WHERE id=?')
+                    .bind(order.user_id)
+                    .first<any>()
+                ).name,
+                'confirmed:' + r.id,
+              ),
+            ),
+          )
+        ).flat(),
         env.DB.prepare('INSERT OR IGNORE INTO stripe_events(id,type) VALUES(?,?)').bind(
           event.id,
           event.type,
@@ -225,6 +232,7 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
           return;
         }
         await countEvent(env, 'payment_confirmed');
+        await countEvent(env, 'registration_confirmed');
       } catch (e) {
         if (!/CAPACITY_EXCEEDED|PROMO_UNAVAILABLE/.test(String(e))) throw e;
         await env.DB.batch([
@@ -321,81 +329,110 @@ export async function applyRefund(env: Env, refund: Stripe.Refund) {
       (existing.provider_id && existing.provider_id !== refund.id))
   )
     throw Error('Refund reconciliation mismatch');
-  // Keep successful refunds monotonic if an older webhook is received later.
-  await env.DB.prepare(
-    "INSERT INTO refund_jobs(id,order_id,amount,reason,status,provider_id) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN refund_jobs.status='succeeded' THEN 'succeeded' ELSE excluded.status END,provider_id=excluded.provider_id",
-  )
-    .bind(id, order.id, refund.amount, 'Stripe', status, refund.id)
-    .run();
-  const sums = await env.DB.prepare(
-    "SELECT COALESCE(SUM(CASE WHEN status='succeeded' THEN amount ELSE 0 END),0) AS total, SUM(CASE WHEN status IN ('queued','processing','pending') THEN 1 ELSE 0 END) AS pending FROM refund_jobs WHERE order_id=?",
-  )
-    .bind(order.id)
-    .first<any>();
-  const total = sums.total;
-  const next =
-    total >= order.amount
-      ? 'refunded'
-      : sums.pending > 0
-        ? 'refunding'
-        : total > 0
-          ? 'partially_refunded'
-          : order.status === 'refunding'
-            ? 'confirmed'
-            : order.status;
+  // Reconcile the provider result and all derived balances in one atomic D1 batch.
+  // Concurrent webhooks cannot overwrite a newer aggregate with an earlier read.
   const job = await env.DB.prepare('SELECT registration_id FROM refund_jobs WHERE id=?')
     .bind(id)
     .first<any>();
+  const paidSum =
+    "(SELECT COALESCE(SUM(amount),0) FROM refund_jobs WHERE order_id=orders.id AND status='succeeded')";
+  const pending =
+    "EXISTS(SELECT 1 FROM refund_jobs WHERE order_id=orders.id AND status IN ('queued','processing','pending'))";
   const statements = [
-    env.DB.prepare('UPDATE orders SET refunded=?,status=? WHERE id=?').bind(total, next, order.id),
+    env.DB.prepare(
+      "INSERT INTO refund_jobs(id,order_id,amount,reason,status,provider_id) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN refund_jobs.status='succeeded' THEN 'succeeded' ELSE excluded.status END,provider_id=excluded.provider_id",
+    ).bind(id, order.id, refund.amount, 'Stripe', status, refund.id),
+    env.DB.prepare(
+      'UPDATE orders SET refunded=' +
+        paidSum +
+        ',status=CASE WHEN ' +
+        paidSum +
+        ">=amount THEN 'refunded' WHEN " +
+        pending +
+        " THEN 'refunding' WHEN " +
+        paidSum +
+        ">0 THEN 'partially_refunded' WHEN status='refunding' THEN 'confirmed' ELSE status END WHERE id=?",
+    ).bind(order.id),
   ];
   if (job?.registration_id) {
-    const part = await env.DB.prepare(
-      "SELECT COALESCE(SUM(CASE WHEN status='succeeded' THEN amount ELSE 0 END),0) AS total,SUM(CASE WHEN status IN ('queued','processing','pending') THEN 1 ELSE 0 END) AS pending FROM refund_jobs WHERE registration_id=?",
-    )
-      .bind(job.registration_id)
-      .first<any>();
-    const r = await env.DB.prepare('SELECT price,status FROM registrations WHERE id=?')
-      .bind(job.registration_id)
-      .first<any>();
-    const rs =
-      part.total >= r.price
-        ? 'refunded'
-        : part.pending > 0
-          ? 'refunding'
-          : part.total > 0
-            ? 'partially_refunded'
-            : 'confirmed';
-    statements.push(
-      env.DB.prepare('UPDATE registrations SET refunded_amount=?,status=? WHERE id=?').bind(
-        part.total,
-        rs,
-        job.registration_id,
-      ),
-    );
-  } else {
-    // External/whole-order refunds retain legacy allocation. Never reactivate cancelled tickets.
+    const partSum =
+      "(SELECT COALESCE(SUM(amount),0) FROM refund_jobs WHERE registration_id=registrations.id AND status='succeeded')";
+    const partPending =
+      "EXISTS(SELECT 1 FROM refund_jobs WHERE registration_id=registrations.id AND status IN ('queued','processing','pending'))";
     statements.push(
       env.DB.prepare(
-        "UPDATE registrations SET status=? WHERE order_id=? AND status NOT IN ('cancelled','refunded')",
-      ).bind(next, order.id),
+        'UPDATE registrations SET refunded_amount=' +
+          partSum +
+          ',status=CASE WHEN ' +
+          partSum +
+          ">=price THEN 'refunded' WHEN " +
+          partPending +
+          " THEN 'refunding' ELSE 'cancelled' END WHERE id=?",
+      ).bind(job.registration_id),
     );
+  } else {
+    statements.push(
+      env.DB.prepare(
+        "UPDATE registrations SET status=(SELECT status FROM orders WHERE id=?) WHERE order_id=? AND status NOT IN ('cancelled','refunded')",
+      ).bind(order.id, order.id),
+    );
+  }
+  await env.DB.batch(statements);
+  if (!order.removed_at && status === 'succeeded') {
+    const buyer = await env.DB.prepare('SELECT email FROM user WHERE id=?')
+      .bind(order.user_id)
+      .first<any>();
+    const participant = job?.registration_id
+      ? await env.DB.prepare('SELECT email FROM registrations WHERE id=?')
+          .bind(job.registration_id)
+          .first<any>()
+      : null;
+    const notifications = [];
+    for (const recipient of new Set<string>([
+      buyer.email,
+      ...(participant ? [participant.email] : []),
+    ]))
+      notifications.push(
+        mailStatement(
+          env,
+          recipient,
+          'Remboursement confirmé — Ride For Brains',
+          'Un remboursement de ' +
+            cad(refund.amount) +
+            ' a été confirmé pour votre inscription. Le délai de disponibilité sur votre compte dépend de votre banque.',
+          'refund-confirmed:' + refund.id + ':' + (await digest(recipient)),
+          recipient === buyer.email ? order.user_id : null,
+          job?.registration_id || null,
+        ),
+      );
+    await env.DB.batch(notifications);
   }
   if (order.removed_at && status === 'succeeded') {
     const contact = await removalContacts(env, order.id);
+    const current = await env.DB.prepare('SELECT refunded FROM orders WHERE id=?')
+      .bind(order.id)
+      .first<any>();
     if (contact)
-      statements.push(
-        ...confirmationMails(
+      await env.DB.batch(
+        confirmationMails(
           env,
           contact,
           'Remboursement confirmé — Ride For Brains',
-          `Stripe confirme un remboursement de ${cad(refund.amount)} sur la commande retirée ${order.id}. Total remboursé : ${cad(total)} sur ${cad(order.amount)} réellement payés après rabais. La disponibilité sur le compte bancaire dépend de l’établissement de paiement.`,
+          'Un remboursement de ' +
+            cad(refund.amount) +
+            ' est confirmé sur la commande retirée ' +
+            order.id +
+            '. Total remboursé : ' +
+            cad(current.refunded) +
+            ' sur ' +
+            cad(order.amount) +
+            ' réellement payés après rabais. La disponibilité sur le compte bancaire dépend de votre établissement.',
           'removed-refund:' + refund.id,
         ),
       );
   }
-  await env.DB.batch(statements);
 }
+
 export async function processRefunds(env: Env) {
   if (!env.STRIPE_SECRET_KEY) return;
   const api = stripe(env);

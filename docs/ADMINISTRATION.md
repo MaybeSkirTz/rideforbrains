@@ -1,5 +1,19 @@
 # Guide de l’administration
 
+## Nouveautés du 1er novembre 2026
+
+Les tarifs actuels sont conservés et restent modifiables par activité. Aucun tarif de 15 $ n’est réappliqué automatiquement. Voir la [livraison et sa checklist](LIVRAISON-NOVEMBRE-2026.md).
+
+Dans **Participants → dossier → Corriger le courriel du participant**, saisir la nouvelle adresse, puis confirmer l’envoi. Le nouveau destinataire doit ouvrir le message et confirmer son adresse dans les 24 heures. L’adresse du compte acheteur ne change pas. Le contact de la participation et son QR sont remplacés seulement après cette vérification. Les autres personnes du groupe ne sont pas touchées. Un rappel ne peut pas contourner une correction encore en attente.
+
+**Désactiver le lien personnel** révoque uniquement l’accès reçu par courriel; le QR détenu par le participant reste valable. Une annulation de participation invalide aussi son billet. Un renvoi explicite après révocation peut créer un nouveau lien; l’ancien reste inutilisable. Le traitement automatique des anciens billets respecte les révocations.
+
+L’espace participant donne accès au **reçu du dossier** dans le détail de paiement. Les montants tiennent compte des promotions et des remboursements confirmés. Ce document n’est pas un reçu fiscal ou de don. Une demande d’annulation et un remboursement effectivement confirmé sont deux états distincts.
+
+Dans les paramètres, la section de **validation du lancement** recueille les décisions sur la fiscalité, les remboursements, l’annulation, le report, la météo et la force majeure. Finaliser les textes et incrémenter la version des conditions lorsqu’une politique change. Les anciennes conditions achetées restent attachées aux commandes. En production live, une revue incomplète ferme les nouvelles inscriptions; elle ne supprime pas les comptes ni les billets déjà acquis.
+
+L’éditeur de contenu ajoute les médias, réseaux sociaux, année de première édition, rôles de bénévolat et offres de partenariat. Les parcours peuvent préciser départ, dénivelé et libellés de départ/arrivée sans remplacer leurs vrais points GPX. Publier uniquement des données réelles et des photos autorisées, avec des descriptions accessibles précises.
+
 ## Accéder
 
 Se connecter par mot de passe et code à 6 chiffres sur `/connexion`. L’administrateur principal ouvre `/admin`, protégé en production par Cloudflare Access avec MFA. Les organisateurs et bénévoles ouvrent **Mon espace → Espace équipe** (`/organisation`), avec les permissions attribuées sur le site, sans ajout Cloudflare individuel. Pour un ancien compte, utiliser « Mot de passe oublié / Définir mon mot de passe ». Le rôle est lu côté serveur pour chaque opération. Voir [le guide des nouveaux accès et courriels](EQUIPE-PARTICIPANTS-COURRIELS.md).

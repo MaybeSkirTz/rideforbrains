@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { uuid, now, parse, isLocal } from './types';
 import { processRefunds } from './payments';
+import { mailStatement, processMail } from './mail';
+import { digest } from './crypto';
+import { cad } from './removal-notifications';
+import { launchIssues } from '../shared/launch';
 export function extensions(
   app: any,
   { actor, staffActor, settings, audit, fail, limited }: any,
@@ -64,6 +68,7 @@ export function extensions(
     await staffActor(c, 'event');
     const s = await settings(c.env);
     const missing = [
+      ...launchIssues(s),
       !s.location && 'lieu',
       s.taxMode === 'unconfirmed' && 'fiscalité',
       !s.legalApproved && 'validation des conditions',
@@ -145,6 +150,18 @@ export function extensions(
     statements.push(
       audit(c.env, a.id, 'registration.cancellation_requested', r.id, { amount, eligible }),
     );
+    for (const recipient of new Set([a.email, r.email]))
+      statements.push(
+        mailStatement(
+          c.env,
+          recipient,
+          'Annulation de participation — Ride For Brains',
+          `La participation de ${r.first_name} ${r.last_name} est annulée. Les autres billets du dossier restent valides. ${amount ? 'Un remboursement de ' + cad(amount) + ' est demandé selon la politique. Un autre courriel confirmera son traitement.' : 'Aucun remboursement n’est prévu selon la politique à cette date.'}`,
+          'individual-cancel:' + r.id + ':' + (await digest(recipient)),
+          recipient === a.email ? a.id : null,
+          r.id,
+        ),
+      );
     try {
       await c.env.DB.batch(statements);
     } catch (e) {
@@ -155,7 +172,12 @@ export function extensions(
         );
       throw e;
     }
-    c.executionCtx.waitUntil(processRefunds(c.env));
+    c.executionCtx.waitUntil(
+      (async () => {
+        await processRefunds(c.env);
+        await processMail(c.env);
+      })(),
+    );
     return c.json({ status, refundRequested: amount });
   });
   adminApi.get('/analytics', async (c: any) => {
@@ -164,7 +186,7 @@ export function extensions(
       "SELECT date(created_at,'unixepoch') AS label,COUNT(*) AS orders,COALESCE(SUM(CASE WHEN payment_intent IS NOT NULL THEN amount-refunded ELSE 0 END),0) AS revenue FROM visible_orders GROUP BY label ORDER BY label DESC LIMIT 60",
       'SELECT a.name,a.distance,r.status,COUNT(*) AS count FROM visible_registrations r JOIN activities a ON a.id=r.activity_id GROUP BY a.id,r.status',
       'SELECT status,COUNT(*) AS count FROM visible_orders GROUP BY status',
-      "SELECT event,SUM(count) AS count FROM funnel_daily WHERE event!='payment_confirmed' AND day>=date('now','-60 days') GROUP BY event UNION ALL SELECT 'payment_confirmed',COUNT(*) FROM visible_orders WHERE payment_intent IS NOT NULL AND status IN ('confirmed','refunding','partially_refunded','refunded','cancelled') AND date(created_at,'unixepoch')>=date('now','-60 days')",
+      "SELECT event,SUM(count) AS count FROM funnel_daily WHERE event NOT IN ('payment_confirmed','registration_confirmed') AND day>=date('now','-60 days') GROUP BY event UNION ALL SELECT 'payment_confirmed',COUNT(*) FROM visible_orders WHERE payment_intent IS NOT NULL AND status IN ('confirmed','refunding','partially_refunded','refunded','cancelled') AND date(created_at,'unixepoch')>=date('now','-60 days') UNION ALL SELECT 'registration_confirmed',COUNT(*) FROM visible_registrations r WHERE EXISTS(SELECT 1 FROM history h WHERE h.registration_id=r.id AND h.status='confirmed') AND date(r.created_at,'unixepoch')>=date('now','-60 days')",
       "SELECT status,COUNT(*) AS count FROM outbox WHERE kind!='login' GROUP BY status",
       'SELECT COUNT(*) AS present FROM visible_registrations WHERE checked_at IS NOT NULL',
       "SELECT p.code,COUNT(o.id) AS uses FROM promos p LEFT JOIN visible_orders o ON o.promo=p.code AND o.status IN ('confirmed','refunding','partially_refunded','refunded') GROUP BY p.code",

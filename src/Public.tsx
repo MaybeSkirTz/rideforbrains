@@ -2,6 +2,7 @@ import { ArrivalStory, SportMotionStory, TeamMotion, PreparationMotion } from '.
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { ArrowUpRight, ArrowRight, Plus, Download } from 'lucide-react';
 import { useApp } from './context';
+import { activityPriceLabel } from '../shared/registration';
 import { Link, Page } from './ui';
 import { money } from './api';
 import { daysUntil, googleCalendarUrl, donationNotice, donationDestination } from '../shared/event';
@@ -49,14 +50,29 @@ export function CalendarLinks() {
 function Countdown() {
   const { data } = useApp();
   const [days, setDays] = useState(() => daysUntil(data.settings.eventAt));
+  const past =
+    new Date(data.settings.eventAt).toLocaleDateString('en-CA', { timeZone: 'America/Toronto' }) <
+    new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
   useEffect(() => {
     const tick = setInterval(() => setDays(daysUntil(data.settings.eventAt)), 60000);
     return () => clearInterval(tick);
   }, [data.settings.eventAt]);
   return (
     <span className="countdown">
-      <b>J−{days}</b>
-      <span>{days ? 'avant de se retrouver' : 'Le rendez-vous'}</span>
+      <b>
+        {past
+          ? 'L’édition ' + new Date(data.settings.eventAt).getFullYear()
+          : days
+            ? 'J−' + days
+            : 'Aujourd’hui'}
+      </b>
+      <span>
+        {past
+          ? 'Retrouvez notre histoire'
+          : days
+            ? 'avant de se retrouver'
+            : 'Le jour du rendez-vous'}
+      </span>
     </span>
   );
 }
@@ -71,6 +87,7 @@ function FirstEdition() {
   return (
     <section className="first-edition editorial-section" id="premiere-edition">
       <div className="section-index">Souvenirs / Première édition</div>
+      {e.year && <p className="edition-year">{e.year} · Première édition</p>}
       <div className="archive-heading">
         <h2>{e.title}</h2>
         {e.intro && <p>{e.intro}</p>}
@@ -190,9 +207,7 @@ export function SportRows() {
             <div className="sport-mini-scene">
               <Scene mode={g.id as any} compact />
             </div>
-            <span className="sport-row-price">
-              Dès {money(Math.min(...activities.map((a) => a.price)))}
-            </span>
+            <span className="sport-row-price">{activityPriceLabel(activities)}</span>
             <ArrowUpRight className="sport-arrow" size={28} />
           </Link>
         );
@@ -204,7 +219,10 @@ export function Home() {
   const { data } = useApp();
   const s = data.settings,
     e = editorial(s);
-  useEffect(() => track('visit'), []);
+  const memory = published<any>(s.photos).find((p) =>
+    ['edition', 'depart', 'moments'].includes(p.section),
+  );
+  useEffect(() => track('home_view'), []);
   return (
     <>
       <section className="opening-story" data-neural-story>
@@ -225,7 +243,15 @@ export function Home() {
                 </React.Fragment>
               ))}
             </h1>
-            <p className="opening-intro">{e.heroIntro}</p>
+            {e.heroIntro.length <= 240 && <p className="opening-intro">{e.heroIntro}</p>}
+            <p className="hero-essentials">
+              <strong>{activityPriceLabel(data.activities)}</strong>
+              <span>
+                par activité · Vélo 18+
+                <br />
+                Course et marche : tous les âges, accord parental avant 18 ans
+              </span>
+            </p>
             <div className="actions">
               <Link to="/activites" className="button">
                 Choisir mon activité <ArrowUpRight size={18} />
@@ -239,10 +265,31 @@ export function Home() {
                 Soutenir la collecte Ride For Brains <ArrowUpRight size={16} />
               </a>
             </div>
+            {e.heroIntro.length > 240 && (
+              <details className="hero-introduction">
+                <summary>L’esprit de l’événement</summary>
+                <p className="opening-intro">{e.heroIntro}</p>
+              </details>
+            )}
             <div className="opening-bottom">
               <Countdown />
               <CalendarLinks />
             </div>
+            {memory && (
+              <figure className="hero-memory">
+                <img
+                  src={memory.url}
+                  alt={memory.alt}
+                  width="640"
+                  height="360"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <figcaption>
+                  <Link to="/equipe">Découvrir la première édition</Link>
+                </figcaption>
+              </figure>
+            )}
           </div>
           <div className="opening-visual">
             <div className="neural-coordinate" aria-hidden="true">
@@ -277,10 +324,12 @@ export function Home() {
           <span>Accueil dès</span>
           <strong>{s.reception.replace(':', ' h ')}</strong>
         </div>
-        <div>
-          <span>Lieu</span>
-          <strong>{s.location || 'À confirmer'}</strong>
-        </div>
+        {s.location && (
+          <div>
+            <span>Lieu</span>
+            <strong>{s.location}</strong>
+          </div>
+        )}
         <Link to="/infos" className="text-link">
           Préparer ma journée <ArrowRight size={17} />
         </Link>
@@ -376,10 +425,37 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                 {focus && (
                   <div className="activity-detail">
                     <h3>Le parcours</h3>
-                    <p>
-                      {a.route.description ||
-                        'Le parcours et l’heure de départ restent à confirmer.'}
-                    </p>
+                    {a.route.description ? (
+                      <p>{a.route.description}</p>
+                    ) : !a.route.coordinates?.length && !a.route.mapUrl ? (
+                      <p>Parcours à venir.</p>
+                    ) : null}
+                    <dl className="route-facts">
+                      {a.route.departure && (
+                        <div>
+                          <dt>Départ</dt>
+                          <dd>{a.route.departure.replace(':', ' h ')}</dd>
+                        </div>
+                      )}
+                      {a.route.elevationGain != null && (
+                        <div>
+                          <dt>Dénivelé positif</dt>
+                          <dd>{a.route.elevationGain} m</dd>
+                        </div>
+                      )}
+                      {a.route.startLabel && (
+                        <div>
+                          <dt>Point de départ</dt>
+                          <dd>{a.route.startLabel}</dd>
+                        </div>
+                      )}
+                      {a.route.finishLabel && (
+                        <div>
+                          <dt>Arrivée</dt>
+                          <dd>{a.route.finishLabel}</dd>
+                        </div>
+                      )}
+                    </dl>
                     {a.route.coordinates?.length > 1 && (
                       <Suspense fallback={<p>Chargement du tracé…</p>}>
                         <RouteMap route={a.route} name={a.name} />
@@ -407,6 +483,14 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                         </a>
                       )}
                     </div>
+                    {published<any>(data.settings.photos).some((p) => p.section === a.sport) && (
+                      <PhotoAlbum
+                        photos={published<any>(data.settings.photos).filter(
+                          (p) => p.section === a.sport,
+                        )}
+                        label={'Photos de ' + group?.label}
+                      />
+                    )}
                   </div>
                 )}
               </article>
@@ -442,14 +526,18 @@ export function Practical() {
             {s.closing ? ' — ' + s.closing : ''}
           </dd>
         </div>
-        <div>
-          <dt>Lieu de départ</dt>
-          <dd>{s.location || 'À confirmer'}</dd>
-        </div>
-        <div>
-          <dt>Départs des activités</dt>
-          <dd>{e.practical.find((p) => p.id === 'departs' && p.enabled)?.body || 'À confirmer'}</dd>
-        </div>
+        {s.location && (
+          <div>
+            <dt>Lieu de départ</dt>
+            <dd>{s.location}</dd>
+          </div>
+        )}
+        {e.practical.find((p) => p.id === 'departs' && p.enabled && p.body) && (
+          <div>
+            <dt>Départs des activités</dt>
+            <dd>{e.practical.find((p) => p.id === 'departs' && p.enabled)?.body}</dd>
+          </div>
+        )}
       </dl>
       <CalendarLinks />
       <div className="practical-content">
@@ -506,6 +594,28 @@ export function Team() {
       <TeamMotion />
       <TeamMembers />
       <FirstEdition />
+      {published(editorial(data.settings).media).length > 0 && (
+        <section className="media-coverage">
+          <h2>Ils parlent de Ride For Brains</h2>
+          {published(editorial(data.settings).media).map((m, i) => (
+            <article key={i}>
+              {m.logo && <img src={m.logo} alt={m.name} width="160" height="80" loading="lazy" />}
+              <div>
+                <p>
+                  {m.name}
+                  {m.date ? ' · ' + m.date : ''}
+                </p>
+                <h3>
+                  <a href={m.url} target="_blank" rel="noopener noreferrer">
+                    {m.title}
+                  </a>
+                </h3>
+                {m.quote && <blockquote>« {m.quote} »</blockquote>}
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
       <PhotoAlbum
         photos={published<any>(data.settings.photos).filter(
           (p) => p.section === 'depart' || p.section === 'arrivee',

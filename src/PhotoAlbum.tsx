@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { storedMotionOff } from '../shared/motion';
 import { ChevronLeft, ChevronRight, Pause, Play, Maximize2, X } from 'lucide-react';
 export type AlbumPhoto = { url: string; alt: string; caption?: string };
 export const SLIDE_INTERVAL = 6000;
@@ -7,10 +8,7 @@ export const slideIndex = (index: number, delta: number, count: number) =>
 function motionOff() {
   if (typeof window === 'undefined') return true;
   try {
-    return (
-      matchMedia('(prefers-reduced-motion: reduce)').matches ||
-      localStorage.getItem('rfb-motion') === 'off'
-    );
+    return matchMedia('(prefers-reduced-motion: reduce)').matches || storedMotionOff();
   } catch {
     return true;
   }

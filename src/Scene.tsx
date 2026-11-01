@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useId, lazy, Suspense } from 'react';
+import { storedMotionOff } from '../shared/motion';
 const Canvas = lazy(() => import('./Brain'));
 export type SceneMode =
   | 'brain'
@@ -121,7 +122,7 @@ export function NeuralFallback({
           <circle cx="1" cy="1" r=".8" fill="currentColor" opacity=".13" />
         </pattern>
       </defs>
-      <rect width="520" height="270" fill={'url(#neural-grid-' + mode + ')'} />
+      <rect width="520" height="270" fill={'url(#neural-grid-' + id + ')'} />
       <g fill="none" stroke="currentColor" strokeWidth="1.3">
         {paths.map((d, i) => (
           <path key={d} d={d} opacity={i < 2 ? 0.75 : 0.3} />
@@ -142,13 +143,11 @@ export default function Scene({
   const ref = useRef<HTMLDivElement>(null);
   const [load, setLoad] = useState(false),
     [motion, setMotion] = useState(
-      () =>
-        matchMedia('(prefers-reduced-motion: reduce)').matches ||
-        localStorage.getItem('rfb-motion') === 'off',
+      () => matchMedia('(prefers-reduced-motion: reduce)').matches || storedMotionOff(),
     );
   useEffect(() => {
     const media = matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setMotion(media.matches || localStorage.getItem('rfb-motion') === 'off');
+    const update = () => setMotion(media.matches || storedMotionOff());
     update();
     media.addEventListener('change', update);
     window.addEventListener('rfb-motion', update);

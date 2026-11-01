@@ -72,8 +72,10 @@ export async function api<T = any>(
   path: string,
   body?: unknown,
   method = body ? 'POST' : 'GET',
+  options: { keepalive?: boolean; signal?: AbortSignal } = {},
 ): Promise<T> {
   const res = await siteFetch(path, {
+    ...options,
     method,
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,

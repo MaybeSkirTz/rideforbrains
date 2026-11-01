@@ -94,6 +94,18 @@ export const settingsSchema = z
     termsVersion: z.string().min(1).max(80),
     legalApproved: z.boolean(),
     brandApproved: z.boolean(),
+    launchReview: z
+      .object({
+        refundApproved: z.boolean(),
+        taxApproved: z.boolean(),
+        eventApproved: z.boolean(),
+        cancellation: z.string().max(5000),
+        postponement: z.string().max(5000),
+        weather: z.string().max(5000),
+        forceMajeure: z.string().max(5000),
+      })
+      .strict()
+      .optional(),
     editableFields: z.array(z.enum(['phone', 'emergency_name', 'emergency_phone'])),
     terms: z.string().min(10).max(16000),
     privacy: z.string().min(10).max(16000),
@@ -121,6 +133,10 @@ export const settingsSchema = z
             url: publicURL,
             alt: line,
             caption: z.string().max(500).optional(),
+            year: z
+              .string()
+              .regex(/^$|^\d{4}$/)
+              .optional(),
             section: z
               .enum([
                 'edition',
@@ -154,6 +170,13 @@ export const activitySchema = z
     closes_at: z.number().int().nullable(),
     enabled: z.union([z.literal(0), z.literal(1)]),
     route: z.object({
+      departure: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .optional(),
+      elevationGain: z.number().int().min(0).max(15000).nullable().optional(),
+      startLabel: z.string().max(150).optional(),
+      finishLabel: z.string().max(150).optional(),
       description: z.string().max(5000).optional(),
       mapUrl: z
         .url()
