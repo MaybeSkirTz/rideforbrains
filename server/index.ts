@@ -34,6 +34,7 @@ import {
 } from './validation';
 import { mailStatement, processMail } from './mail';
 import { stripe, startCheckout, handleStripeEvent, processRefunds } from './payments';
+import { paymentFailure } from './payment-errors';
 
 export const app = new Hono<AppContext>();
 const adminApi = new Hono<AppContext>();
@@ -169,18 +170,31 @@ app.get('/api/admin/access', async (c) => {
   return c.redirect('/admin', 302);
 });
 app.onError((e, c) => {
+  const payment = paymentFailure(e),
+    requestId = uuid();
   if (!(e instanceof HTTPException) && !(e instanceof z.ZodError))
     console.error(
       JSON.stringify({
         event: 'api_error',
         route: c.req.routePath || '/api/*',
-        code: /D1_ERROR/.test(String(e))
-          ? 'D1_ERROR'
-          : /Stripe/.test(e.name)
-            ? 'STRIPE_ERROR'
-            : 'INTERNAL_ERROR',
-        requestId: uuid(),
+        code:
+          payment?.code ||
+          (/D1_ERROR/.test(String(e))
+            ? 'D1_ERROR'
+            : /Stripe/.test(e.name)
+              ? 'STRIPE_ERROR'
+              : 'INTERNAL_ERROR'),
+        ...payment?.diagnostics,
+        requestId,
       }),
+    );
+  if (payment)
+    return c.json(
+      {
+        error: payment.message + ' Référence : ' + requestId.slice(0, 8) + '.',
+        reference: requestId,
+      },
+      payment.status as any,
     );
   if (e instanceof HTTPException) return c.json({ error: e.message }, e.status);
   if (e instanceof z.ZodError)
@@ -537,8 +551,10 @@ app.post('/api/orders', async (c) => {
       503,
       'Les paiements ne sont pas encore ouverts : Stripe doit être configuré. Aucun montant n’a été prélevé.',
     );
+  // Reject incompatible key/mode configuration before reserving places or consuming consent.
+  if (amount > 0) stripe(c.env);
   const id = uuid(),
-    expires = now() + 35 * 60,
+    expires = now() + 60 * 60,
     status = amount === 0 ? 'confirmed' : 'pending';
   const stmts = [
     c.env.DB.prepare(

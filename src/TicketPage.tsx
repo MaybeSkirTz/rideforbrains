@@ -15,9 +15,12 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
   const fragment = useFragmentToken(),
     token = personal ? fragment : '';
   const [ticket, setTicket] = useState<any>(),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [downloading, setDownloading] = useState(false),
+    [downloadError, setDownloadError] = useState('');
   useEffect(() => {
     setError('');
+    setDownloadError('');
     setTicket(undefined);
     if (!personal && !user) return;
     const controller = new AbortController();
@@ -71,15 +74,41 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
           timeZone: 'America/Toronto',
         })
       : 'Date à confirmer';
-  const download = () => {
+  const download = async () => {
+    setDownloading(true);
+    setDownloadError('');
     const qr = ticket.svg.replace('<svg ', '<svg x="150" y="235" width="400" height="400" ');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="850" viewBox="0 0 700 850"><rect width="700" height="850" fill="#f6f5ed"/><g fill="#12312f" font-family="Arial,sans-serif" text-anchor="middle"><text x="350" y="65" font-size="30" font-weight="bold">RIDE FOR BRAINS</text><text x="350" y="105" font-size="20">${esc(date)}</text><text x="350" y="157" font-size="26">${esc(ticket.name)} · ${esc(ticket.distance)}</text><text x="350" y="200" font-size="22">${esc(ticket.first_name)} ${esc(ticket.last_name)}</text>${qr}<text x="350" y="690" font-size="18">Accueil ${esc(event.reception || 'à confirmer')}</text><text x="350" y="727" font-size="16">Billet personnel · ${esc(ticket.id.slice(0, 8))}</text><text x="350" y="765" font-size="14">Présenter ce code à l’accueil. Ne pas le partager.</text></g></svg>`;
-    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Ride-For-Brains-' + ticket.id.slice(0, 8) + '.svg';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const artworkUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    try {
+      const artwork = new Image();
+      artwork.src = artworkUrl;
+      await artwork.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = 1400;
+      canvas.height = 1700;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Canvas indisponible');
+      context.drawImage(artwork, 0, 0, canvas.width, canvas.height);
+      const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!png) throw new Error('Image indisponible');
+
+      const url = URL.createObjectURL(png);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Ride-For-Brains-' + ticket.id.slice(0, 8) + '.png';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      setDownloadError(
+        'Le téléchargement du billet a échoué. Utilisez « Imprimer / enregistrer en PDF ».',
+      );
+    } finally {
+      URL.revokeObjectURL(artworkUrl);
+      setDownloading(false);
+    }
   };
   const downloadCalendar = () => {
     const url = URL.createObjectURL(
@@ -135,8 +164,11 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
         <p className="small">
           Billet personnel. Conservez-le sur votre téléphone et évitez de partager son code.
         </p>
+        {downloadError && <Notice error>{downloadError}</Notice>}
         <div className="actions ticket-actions">
-          <Button onClick={download}>Télécharger mon billet</Button>
+          <Button onClick={download} busy={downloading}>
+            Télécharger mon billet
+          </Button>
           <Button className="button light" onClick={() => window.print()}>
             Imprimer / enregistrer en PDF
           </Button>

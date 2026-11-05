@@ -14,12 +14,14 @@ function Rows({
   change,
   fields,
   blank,
+  selection,
 }: {
   label: string;
   rows: any[];
   change: (v: any[]) => void;
   fields: Spec[];
   blank: any;
+  selection?: { index: number; select: (index: number) => void };
 }) {
   const update = (i: number, k: string, v: any) =>
     change(rows.map((r, n) => (n === i ? { ...r, [k]: v } : r)));
@@ -29,11 +31,13 @@ function Rows({
     if (j < 0 || j >= a.length) return;
     [a[i], a[j]] = [a[j], a[i]];
     change(a.map((r, order) => ('order' in blank ? { ...r, order } : r)));
+    selection?.select(j);
   };
+  const displayedRows = [...rows.entries()].filter(([i]) => !selection || selection.index === i);
   return (
     <fieldset className="content-repeater">
       <legend>{label}</legend>
-      {rows.map((r, i) => (
+      {displayedRows.map(([i, r]) => (
         <div className="content-row" key={i}>
           <div className="content-row-tools">
             <strong>
@@ -120,13 +124,111 @@ function Rows({
       <Button
         type="button"
         className="button light"
-        onClick={() =>
-          change([...rows, { ...blank, ...('order' in blank ? { order: rows.length } : {}) }])
-        }
+        onClick={() => {
+          change([...rows, { ...blank, ...('order' in blank ? { order: rows.length } : {}) }]);
+          selection?.select(rows.length);
+        }}
       >
-        Ajouter — {label}
+        {selection ? 'Ajouter par adresse' : `Ajouter — ${label}`}
       </Button>
     </fieldset>
+  );
+}
+export function PhotoEditor({
+  photos,
+  updatePhotos,
+}: {
+  photos: any[];
+  updatePhotos: (update: (current: any[]) => any[]) => void;
+}) {
+  const [selected, select] = useState<number | 'last'>(0);
+  const last = photos.length - 1;
+  const index = selected === 'last' ? last : Math.min(selected, last);
+  return (
+    <>
+      <MediaUpload
+        onUploaded={(url) => {
+          updatePhotos((current) => [
+            ...current,
+            {
+              url,
+              alt: 'Photo de l’événement à décrire',
+              caption: '',
+              section: 'edition',
+              enabled: false,
+              order: current.length,
+            },
+          ]);
+          select('last');
+        }}
+      />
+      {photos.length > 0 && (
+        <div className="photo-editor-navigation">
+          <Field label="Photo à modifier">
+            <select value={index} onChange={(event) => select(Number(event.target.value))}>
+              {photos.map((photo, i) => (
+                <option key={i} value={i}>
+                  {i + 1}. {photo.caption || photo.alt || 'Photo sans description'}
+                  {photo.enabled === false ? ' · Masquée' : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="photo-editor-arrows">
+            <Button
+              type="button"
+              className="button light"
+              aria-label="Photo précédente"
+              disabled={index <= 0}
+              onClick={() => select(index - 1)}
+            >
+              ←
+            </Button>
+            <Button
+              type="button"
+              className="button light"
+              aria-label="Photo suivante"
+              disabled={index >= last}
+              onClick={() => select(index + 1)}
+            >
+              →
+            </Button>
+          </div>
+        </div>
+      )}
+      <Rows
+        label="Photos"
+        rows={photos}
+        change={(rows) => {
+          updatePhotos(() => rows);
+          if (rows.length < photos.length) select(Math.max(0, Math.min(index, rows.length - 1)));
+        }}
+        selection={{ index, select }}
+        blank={{ url: '', alt: '', caption: '', section: 'edition', enabled: true, order: 0 }}
+        fields={[
+          { key: 'url', label: 'Adresse de l’image', type: 'image' },
+          { key: 'alt', label: 'Description accessible' },
+          { key: 'caption', label: 'Légende' },
+          { key: 'year', label: 'Année (facultatif)' },
+          {
+            key: 'section',
+            label: 'Section',
+            type: 'select',
+            options: [
+              'edition',
+              'velo',
+              'course',
+              'marche',
+              'benevoles',
+              'equipe',
+              'depart',
+              'arrivee',
+              'moments',
+            ],
+          },
+        ]}
+      />
+    </>
   );
 }
 export default function ContentEditor({
@@ -156,53 +258,6 @@ export default function ContentEditor({
           { key: 'q', label: 'Question' },
           { key: 'a', label: 'Réponse', type: 'textarea' },
         ]}
-      />
-      <p>
-        Utilisez uniquement des photos réelles autorisées. Les sections sans contenu restent
-        discrètes. Une adresse HTTPS permet de publier une photo sans activer de stockage payant.
-      </p>
-      <Rows
-        label="Photos"
-        rows={s.photos || []}
-        change={(v) => change('photos', v)}
-        blank={{ url: '', alt: '', caption: '', section: 'edition', enabled: true, order: 0 }}
-        fields={[
-          { key: 'url', label: 'Adresse de l’image', type: 'image' },
-          { key: 'alt', label: 'Description accessible' },
-          { key: 'caption', label: 'Légende' },
-          { key: 'year', label: 'Année (facultatif)' },
-          {
-            key: 'section',
-            label: 'Section',
-            type: 'select',
-            options: [
-              'edition',
-              'velo',
-              'course',
-              'marche',
-              'benevoles',
-              'equipe',
-              'depart',
-              'arrivee',
-              'moments',
-            ],
-          },
-        ]}
-      />
-      <MediaUpload
-        onUploaded={(url) =>
-          change('photos', [
-            ...(s.photos || []),
-            {
-              url,
-              alt: 'Photo de l’événement à décrire',
-              caption: '',
-              section: 'edition',
-              enabled: false,
-              order: (s.photos || []).length,
-            },
-          ])
-        }
       />
       <Rows
         label="Partenaires"

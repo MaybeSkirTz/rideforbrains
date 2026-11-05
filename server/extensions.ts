@@ -5,6 +5,7 @@ import { mailStatement, processMail } from './mail';
 import { digest } from './crypto';
 import { cad } from './removal-notifications';
 import { launchIssues } from '../shared/launch';
+import { stripeConfigurationIssue } from './payment-errors';
 export function extensions(
   app: any,
   { actor, staffActor, settings, audit, fail, limited }: any,
@@ -67,13 +68,18 @@ export function extensions(
   adminApi.get('/health', async (c: any) => {
     await staffActor(c, 'event');
     const s = await settings(c.env);
+    const paymentIssue = stripeConfigurationIssue({
+      key: c.env.STRIPE_SECRET_KEY,
+      mode: c.env.PAYMENTS_MODE,
+      local: isLocal(c.env),
+    });
     const missing = [
       ...launchIssues(s),
       !s.location && 'lieu',
       s.taxMode === 'unconfirmed' && 'fiscalité',
       !s.legalApproved && 'validation des conditions',
       !s.brandApproved && 'validation des marques',
-      !c.env.STRIPE_SECRET_KEY && 'clé Stripe',
+      paymentIssue?.label,
       !c.env.STRIPE_WEBHOOK_SECRET && 'webhook Stripe',
       !(c.env.RESEND_API_KEY && c.env.MAIL_FROM) && 'courriel',
       !(c.env.TURNSTILE_SECRET_KEY && c.env.TURNSTILE_SITE_KEY) && 'protection des formulaires',
@@ -89,6 +95,7 @@ export function extensions(
       ready: !missing.length,
       missing,
       paymentsMode: c.env.PAYMENTS_MODE,
+      paymentsConfiguration: { ready: !paymentIssue, code: paymentIssue?.code || null },
       media: !!c.env.MEDIA,
       refunds: jobs.results,
       mail: mail.results,

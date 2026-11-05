@@ -1,5 +1,9 @@
 # Vérifications de la refonte 2027
 
+## Diagnostic des paiements du 1er novembre 2026
+
+**152 tests réussis, zéro échec et zéro test ignoré.** Les six nouveaux contrats vérifient : formats et modes des clés Stripe sans exposer de secret; filtrage des erreurs du prestataire; lancement d’une session après six minutes au montant exact de 498 centimes CAD, même échéance et reprise de la session; refus Stripe avec référence sûre et reprise de la même commande; protection des anciennes réservations trop proches de leur expiration; diagnostic privé d’un mode incompatible avant toute réservation ou utilisation de code promo. TypeScript et build Worker réussis. Les autres contrats de paiement, remboursements après rabais, webhooks, comptes et courriels restent verts. Aucun paiement réel ni changement de secret n’a été effectué. Voir le [diagnostic et les limites du correctif](PAIEMENTS-DIAGNOSTIC.md).
+
 ## Campagne du 1er novembre 2026
 
 **146 tests réussis, zéro échec et zéro test ignoré**, après une référence de 129 tests avant modification. TypeScript, build client/Worker, préparation Wrangler sans publication et audit npm (zéro vulnérabilité) réussis. La [livraison actuelle](LIVRAISON-NOVEMBRE-2026.md) décrit les nouveaux contrats, la recette mobile/ordinateur, la migration additive, les limites matérielles et la checklist. [Résultats détaillés](TEST-RESULTS.txt).

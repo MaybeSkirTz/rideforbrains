@@ -1916,6 +1916,24 @@ footer .footer-brand {
   padding: 24px;
   background: #e8eddf;
 }
+.photo-editor-navigation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+.photo-editor-navigation .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.photo-editor-arrows {
+  display: flex;
+  gap: 4px;
+}
+.photo-editor-arrows .button {
+  padding-inline: 0;
+  min-width: 44px;
+}
 .content-row .button {
   min-width: 44px;
 }

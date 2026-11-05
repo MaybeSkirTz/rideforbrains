@@ -5,7 +5,7 @@ import AdminInsights from './AdminInsights';
 import SubmissionDetails from './SubmissionDetails';
 import EmailCorrection from './EmailCorrection';
 import LaunchReview from './LaunchReview';
-import ContentEditor from './ContentEditor';
+import ContentEditor, { PhotoEditor } from './ContentEditor';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
@@ -676,7 +676,8 @@ function Settings({ setError, setMessage }: Feedback) {
   const [busy, setBusy] = useState(false);
   if (!config) return <p>Chargement des réglages…</p>;
   const s = config.settings;
-  const change = (k: string, v: any) => setConfig({ ...config, settings: { ...s, [k]: v } });
+  const change = (k: string, v: any) =>
+    setConfig((current: any) => ({ ...current, settings: { ...current.settings, [k]: v } }));
   const save = async (e: any) => {
     e.preventDefault();
     setBusy(true);
@@ -790,7 +791,7 @@ function Settings({ setError, setMessage }: Feedback) {
           accueillent tous les âges, avec autorisation depuis le compte du parent pour un mineur.
         </p>
         <details className="settings-details">
-          <summary>Contenus, FAQ, galerie et partenaires</summary>
+          <summary>Contenus, FAQ et partenaires</summary>
           <Field label="Notre histoire">
             <textarea rows={4} value={s.story} onChange={(e) => change('story', e.target.value)} />
           </Field>
@@ -798,6 +799,18 @@ function Settings({ setError, setMessage }: Feedback) {
             <textarea rows={4} value={s.cause} onChange={(e) => change('cause', e.target.value)} />
           </Field>
           <ContentEditor settings={s} change={change} />
+        </details>
+        <details className="settings-details">
+          <summary>Galerie photos ({s.photos?.length || 0})</summary>
+          <PhotoEditor
+            photos={s.photos || []}
+            updatePhotos={(update) =>
+              setConfig((current: any) => ({
+                ...current,
+                settings: { ...current.settings, photos: update(current.settings.photos || []) },
+              }))
+            }
+          />
         </details>
         <details className="settings-details">
           <summary>Conditions, confidentialité et validations</summary>

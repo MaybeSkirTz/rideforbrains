@@ -6,15 +6,16 @@ import { mailStatement } from './mail';
 import { cad, confirmationMails, removalContacts } from './removal-notifications';
 import { ticketDelivery } from './personal-tickets';
 import { digest } from './crypto';
+import { PaymentConfigurationError, stripeConfigurationIssue } from './payment-errors';
 
 export function stripe(env: Env) {
-  if (!env.STRIPE_SECRET_KEY) throw new Error('Stripe non configuré');
-  const live = env.STRIPE_SECRET_KEY.startsWith('sk_live_');
-  if (isLocal(env) && live)
-    throw new Error('Les clés Stripe réelles sont interdites sur le serveur local.');
-  if (live !== (env.PAYMENTS_MODE === 'live'))
-    throw new Error('Le mode Stripe ne correspond pas à la clé');
-  return new Stripe(env.STRIPE_SECRET_KEY, { httpClient: Stripe.createFetchHttpClient() });
+  const issue = stripeConfigurationIssue({
+    key: env.STRIPE_SECRET_KEY,
+    mode: env.PAYMENTS_MODE,
+    local: isLocal(env),
+  });
+  if (issue) throw new PaymentConfigurationError(issue);
+  return new Stripe(env.STRIPE_SECRET_KEY!.trim(), { httpClient: Stripe.createFetchHttpClient() });
 }
 export async function startCheckout(env: Env, order: any) {
   const api = stripe(env);

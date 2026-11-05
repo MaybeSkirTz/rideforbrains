@@ -836,6 +836,103 @@ async function checkoutFixture(cookie, id, sessionId = 'cs_test_' + randomUUID()
   assert.equal(r.status, 200, JSON.stringify(r.data));
   return sessionId;
 }
+test('Checkout after six minutes preserves the 4.98 CAD amount and the reservation deadline, then reuses its session', async () => {
+  const u = await login();
+  await db.prepare("UPDATE activities SET price=498 WHERE id='course-2'").run();
+  const o = await create(u.cookie, order([participant('course-2')]));
+  const initial = await db.prepare('SELECT * FROM orders WHERE id=?').bind(o.id).first();
+  assert.equal(initial.amount, 498);
+  assert.ok(initial.expires_at - initial.created_at >= 3595);
+  assert.ok(initial.expires_at - initial.created_at <= 3605);
+  // Advance the reservation's age without sleeping or making any external request.
+  const time = Math.floor(Date.now() / 1000),
+    deadline = time + 54 * 60;
+  await db.batch([
+    db
+      .prepare('UPDATE orders SET created_at=?,expires_at=? WHERE id=?')
+      .bind(time - 6 * 60, deadline, o.id),
+    db.prepare('UPDATE registrations SET expires_at=? WHERE order_id=?').bind(deadline, o.id),
+  ]);
+  const sid = 'cs_test_' + randomUUID();
+  let submitted;
+  mock
+    .get('https://api.stripe.com')
+    .intercept({
+      path: '/v1/checkout/sessions',
+      method: 'POST',
+      headers: { 'idempotency-key': 'checkout:' + o.id },
+    })
+    .reply(200, async (opts) => {
+      submitted = new URLSearchParams(await new Response(opts.body).text());
+      return { id: sid, url: 'https://checkout.stripe.com/c/pay/test_fixture', status: 'open' };
+    });
+  const first = await request('/orders/' + o.id + '/checkout', {}, u.cookie);
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(submitted.get('line_items[0][price_data][unit_amount]'), '498');
+  assert.equal(submitted.get('line_items[0][price_data][currency]'), 'cad');
+  assert.equal(submitted.get('expires_at'), String(deadline));
+  mockSession({ id: sid, status: 'open', url: first.data.url });
+  const resumed = await request('/orders/' + o.id + '/checkout', {}, u.cookie);
+  assert.equal(resumed.status, 200, JSON.stringify(resumed.data));
+  assert.equal(resumed.data.url, first.data.url);
+  const stored = await db.prepare('SELECT * FROM orders WHERE id=?').bind(o.id).first();
+  assert.equal(stored.expires_at, deadline);
+  assert.equal(stored.stripe_session, sid);
+  assert.equal(stored.status, 'pending');
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM orders').first()).n, 1);
+});
+
+test('Stripe rejection returns a safe reference and allows retrying the same unpaid order', async () => {
+  const u = await login(),
+    o = await create(u.cookie);
+  const initial = await db.prepare('SELECT * FROM orders WHERE id=?').bind(o.id).first();
+  mock
+    .get('https://api.stripe.com')
+    .intercept({ path: '/v1/checkout/sessions', method: 'POST' })
+    .reply(
+      401,
+      {
+        error: {
+          type: 'authentication_error',
+          message: 'Invalid API Key sk_test_never_disclose buyer@example.test',
+          code: 'api_key_expired',
+        },
+      },
+      { headers: { 'request-id': 'req_fixture123' } },
+    );
+  const failed = await request('/orders/' + o.id + '/checkout', {}, u.cookie);
+  assert.equal(failed.status, 503, JSON.stringify(failed.data));
+  assert.match(failed.data.error, /Référence/);
+  assert.match(failed.data.reference, /^[a-f0-9-]{36}$/);
+  assert.doesNotMatch(JSON.stringify(failed.data), /sk_test_never_disclose|buyer@example/);
+  assert.equal(
+    (await db.prepare('SELECT status FROM orders WHERE id=?').bind(o.id).first()).status,
+    'pending',
+  );
+  assert.equal(
+    (await db.prepare("SELECT COUNT(*) n FROM registrations WHERE status='confirmed'").first()).n,
+    0,
+  );
+  await checkoutFixture(u.cookie, o.id);
+  const retried = await db.prepare('SELECT * FROM orders WHERE id=?').bind(o.id).first();
+  assert.equal(retried.amount, initial.amount);
+  assert.equal(retried.expires_at, initial.expires_at);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM orders').first()).n, 1);
+});
+
+test('An older reservation without enough Stripe time stays blocked without changing its deadline', async () => {
+  const u = await login(),
+    o = await create(u.cookie);
+  const deadline = Math.floor(Date.now() / 1000) + 29 * 60;
+  await db.prepare('UPDATE orders SET expires_at=? WHERE id=?').bind(deadline, o.id).run();
+  const r = await request('/orders/' + o.id + '/checkout', {}, u.cookie);
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /ancienne/);
+  assert.equal(
+    (await db.prepare('SELECT expires_at FROM orders WHERE id=?').bind(o.id).first()).expires_at,
+    deadline,
+  );
+});
 function sessionFixture(id, sessionId, amount = 1500, overrides = {}) {
   return {
     id: sessionId,
@@ -3666,6 +3763,54 @@ test('Public live registration stays closed until explicit launch decisions and 
     res = await f.call('/public');
     assert.equal((await res.json()).settings.registrationOpen, true);
     assert.equal((await f.pdb.prepare('SELECT COUNT(*) n FROM orders').first()).n, 0);
+  } finally {
+    await f.prod.dispose();
+    await f.external.close();
+  }
+});
+
+test('A live/test key mismatch is diagnosed privately before creating reservations or reserving a promo use', async () => {
+  const f = await productionMailFixture({
+    PAYMENTS_MODE: 'live',
+    STRIPE_SECRET_KEY: 'sk_test_wrong_mode_fixture',
+  });
+  try {
+    const s = JSON.parse((await f.pdb.prepare('SELECT data FROM settings').first()).data);
+    Object.assign(s, {
+      location: 'Lieu validé dans la fixture',
+      legalApproved: true,
+      brandApproved: true,
+      taxMode: 'not_applicable',
+      terms: 'Conditions finalisées dans la fixture locale.',
+      privacy: 'Politique finalisée dans la fixture locale.',
+      launchReview: {
+        refundApproved: true,
+        taxApproved: true,
+        eventApproved: true,
+        cancellation: 'Conditions de la fixture',
+        postponement: 'Conditions de la fixture',
+        weather: 'Conditions de la fixture',
+        forceMajeure: 'Conditions de la fixture',
+      },
+    });
+    await f.pdb.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+    await f.pdb.prepare("INSERT INTO promos(code,percent,max_uses) VALUES('ONE',10,1)").run();
+    const response = await f.call('/orders', order([participant()], { promo: 'ONE' }));
+    const body = await response.json();
+    assert.equal(response.status, 503, JSON.stringify(body));
+    assert.match(body.error, /configuration/);
+    assert.ok(body.reference);
+    assert.doesNotMatch(JSON.stringify(body), /sk_test_wrong_mode_fixture|STRIPE_MODE_MISMATCH/);
+    assert.equal((await f.pdb.prepare('SELECT COUNT(*) n FROM orders').first()).n, 0);
+    assert.equal((await f.pdb.prepare('SELECT COUNT(*) n FROM registrations').first()).n, 0);
+    assert.equal((await f.pdb.prepare('SELECT COUNT(*) n FROM promo_redemptions').first()).n, 0);
+    await f.pdb.prepare('UPDATE staff SET permissions=?').bind('["event"]').run();
+    const healthResponse = await f.call('/organisation/health');
+    const health = await healthResponse.json();
+    assert.equal(healthResponse.status, 200, JSON.stringify(health));
+    assert.deepEqual(health.paymentsConfiguration, { ready: false, code: 'STRIPE_MODE_MISMATCH' });
+    assert.ok(health.missing.some((message) => /clé de test/.test(message)));
+    assert.doesNotMatch(JSON.stringify(health), /sk_test_wrong_mode_fixture/);
   } finally {
     await f.prod.dispose();
     await f.external.close();
