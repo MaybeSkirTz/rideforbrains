@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, ArrowLeft, Mail, Check } from 'lucide-react';
 import { useApp } from './context';
@@ -113,7 +114,9 @@ export default function Account() {
       setCooldown(result.resendAfter);
       setOtp('');
       setNotice(
-        'Si la demande est valide, un nouveau code vous est envoyé. Seul le dernier code reçu fonctionne.',
+        textForLocale(
+          'Si la demande est valide, un nouveau code vous est envoyé. Seul le dernier code reçu fonctionne.',
+        ),
       );
       codeRef.current?.focus();
     } catch (e) {
@@ -124,30 +127,33 @@ export default function Account() {
   };
   if (user && params.get('reauth') !== '1')
     return (
-      <Page eyebrow="Votre compte" title="Vous êtes connecté.">
-        <p>Votre compte et vos billets vous attendent.</p>
+      <Page eyebrow={textForLocale('Votre compte')} title={textForLocale('Vous êtes connecté.')}>
+        <p>{textForLocale('Votre compte et vos billets vous attendent.')}</p>
         <Link className="button" to={returnTo}>
-          Continuer <ArrowRight size={18} />
+          {textForLocale('Continuer ')}
+          <ArrowRight size={18} />
         </Link>
       </Page>
     );
   return (
     <Page
       className="account-page"
-      eyebrow="Votre compte Ride For Brains"
+      eyebrow={textForLocale('Votre compte Ride For Brains')}
       title={
         challengeId
-          ? 'Entrez votre code.'
+          ? textForLocale('Entrez votre code.')
           : mode === 'create'
-            ? 'Votre première participation commence ici.'
+            ? textForLocale('Votre première participation commence ici.')
             : mode === 'sign-in'
-              ? 'Bon retour parmi nous.'
+              ? textForLocale('Bon retour parmi nous.')
               : mode === 'password'
-                ? 'Votre mot de passe.'
-                : 'On se retrouve au départ.'
+                ? textForLocale('Votre mot de passe.')
+                : textForLocale('On se retrouve au départ.')
       }
       intro={
-        !mode ? 'Votre compte vous permet de retrouver vos inscriptions et vos billets.' : undefined
+        !mode
+          ? textForLocale('Votre compte vous permet de retrouver vos inscriptions et vos billets.')
+          : undefined
       }
     >
       {!mode ? (
@@ -157,13 +163,18 @@ export default function Account() {
               01
             </span>
             <h2>
-              Je participe
+              {textForLocale('Je participe')}
               <br />
-              pour la première fois.
+              {textForLocale('pour la première fois.')}
             </h2>
-            <p>Créez votre compte avec votre prénom, nom, courriel et mot de passe.</p>
+            <p>
+              {textForLocale(
+                'Créez votre compte avec votre prénom, nom, courriel et mot de passe.',
+              )}
+            </p>
             <Button onClick={() => changeMode('create')}>
-              Créer mon compte <ArrowRight size={18} />
+              {textForLocale('Créer mon compte ')}
+              <ArrowRight size={18} />
             </Button>
           </section>
           <section>
@@ -171,15 +182,18 @@ export default function Account() {
               02
             </span>
             <h2>
-              J’ai déjà
+              {textForLocale('J’ai déjà')}
               <br />
-              un compte.
+              {textForLocale('un compte.')}
             </h2>
             <p>
-              Connectez-vous avec votre courriel, votre mot de passe et un code de vérification.
+              {textForLocale(
+                'Connectez-vous avec votre courriel, votre mot de passe et un code de vérification.',
+              )}
             </p>
             <Button className="outline" onClick={() => changeMode('sign-in')}>
-              Me connecter <ArrowRight size={18} />
+              {textForLocale('Me connecter ')}
+              <ArrowRight size={18} />
             </Button>
           </section>
         </div>
@@ -188,18 +202,19 @@ export default function Account() {
           {challengeId ? (
             <form className="account-form account-code" onSubmit={verify}>
               <Mail size={30} aria-hidden="true" />
-              <h2>Un code à 6 chiffres.</h2>
+              <h2>{textForLocale('Un code à 6 chiffres.')}</h2>
               <p>
                 {mode === 'password'
-                  ? 'Si cette adresse correspond à un compte, un code a été envoyé à'
-                  : 'Nous avons envoyé un code à'}{' '}
+                  ? textForLocale('Si cette adresse correspond à un compte, un code a été envoyé à')
+                  : textForLocale('Nous avons envoyé un code à')}{' '}
                 <strong>{details.email}</strong>.
               </p>
               <p>
-                Saisissez-le ici. Il est valable 10 minutes. Vous restez sur cette page; aucun lien
-                à ouvrir.
+                {textForLocale(
+                  'Saisissez-le ici. Il est valable 10 minutes. Vous restez sur cette page; aucun lien à ouvrir.',
+                )}
               </p>
-              <Field label="Code à 6 chiffres">
+              <Field label={textForLocale('Code à 6 chiffres')}>
                 <input
                   ref={codeRef}
                   name="code"
@@ -216,10 +231,15 @@ export default function Account() {
                 />
               </Field>
               <p id="code-help" className="small">
-                Vérifiez aussi les courriels indésirables. Ne partagez jamais ce code.
+                {textForLocale(
+                  'Vérifiez aussi les courriels indésirables. Ne partagez jamais ce code.',
+                )}
               </p>
               {mode === 'password' && (
-                <Field label="Nouveau mot de passe" hint="Au moins 10 caractères.">
+                <Field
+                  label={textForLocale('Nouveau mot de passe')}
+                  hint={textForLocale('Au moins 10 caractères.')}
+                >
                   <input
                     type="password"
                     name="newPassword"
@@ -236,10 +256,10 @@ export default function Account() {
               {notice && <Notice>{notice}</Notice>}
               <Button type="submit" busy={busy}>
                 {mode === 'create'
-                  ? 'Vérifier et créer mon compte'
+                  ? textForLocale('Vérifier et créer mon compte')
                   : mode === 'password'
-                    ? 'Enregistrer et me connecter'
-                    : 'Vérifier et me connecter'}{' '}
+                    ? textForLocale('Enregistrer et me connecter')
+                    : textForLocale('Vérifier et me connecter')}{' '}
                 <ArrowRight size={18} />
               </Button>
               <Button
@@ -248,7 +268,9 @@ export default function Account() {
                 disabled={busy || cooldown > 0}
                 onClick={resend}
               >
-                {cooldown > 0 ? 'Renvoyer un code dans ' + cooldown + ' s' : 'Renvoyer un code'}
+                {cooldown > 0
+                  ? textForLocale('Renvoyer un code dans ') + cooldown + ' s'
+                  : textForLocale('Renvoyer un code')}
               </Button>
               <Button
                 type="button"
@@ -262,20 +284,23 @@ export default function Account() {
                   setBotKey((n) => n + 1);
                 }}
               >
-                Modifier mes informations
+                {textForLocale('Modifier mes informations')}
               </Button>
               {data.environment === 'development' && (
-                <Link to="/courriels-locaux">Voir le code dans la boîte locale</Link>
+                <Link to="/courriels-locaux">
+                  {textForLocale('Voir le code dans la boîte locale')}
+                </Link>
               )}
             </form>
           ) : (
             <form className="account-form" onSubmit={requestCode}>
               <Button type="button" className="text-link" onClick={() => changeMode(null)}>
-                <ArrowLeft size={16} /> Changer de choix
+                <ArrowLeft size={16} />
+                {textForLocale(' Changer de choix')}
               </Button>
               {mode === 'create' && (
                 <div className="form-grid">
-                  <Field label="Prénom">
+                  <Field label={textForLocale('Prénom')}>
                     <input
                       name="firstName"
                       autoComplete="given-name"
@@ -285,7 +310,7 @@ export default function Account() {
                       required
                     />
                   </Field>
-                  <Field label="Nom">
+                  <Field label={textForLocale('Nom')}>
                     <input
                       name="lastName"
                       autoComplete="family-name"
@@ -297,7 +322,7 @@ export default function Account() {
                   </Field>
                 </div>
               )}
-              <Field label="Adresse courriel">
+              <Field label={textForLocale('Adresse courriel')}>
                 <input
                   name="email"
                   type="email"
@@ -310,8 +335,8 @@ export default function Account() {
               </Field>
               {mode !== 'password' ? (
                 <Field
-                  label="Mot de passe"
-                  hint={mode === 'create' ? 'Au moins 10 caractères.' : undefined}
+                  label={textForLocale('Mot de passe')}
+                  hint={mode === 'create' ? textForLocale('Au moins 10 caractères.') : undefined}
                 >
                   <input
                     name="password"
@@ -326,9 +351,9 @@ export default function Account() {
                 </Field>
               ) : (
                 <p>
-                  Ancien compte sans mot de passe ou mot de passe oublié : vérifiez votre courriel
-                  avec un code, puis choisissez votre mot de passe. Vos inscriptions sont
-                  conservées.
+                  {textForLocale(
+                    'Ancien compte sans mot de passe ou mot de passe oublié : vérifiez votre courriel avec un code, puis choisissez votre mot de passe. Vos inscriptions sont conservées.',
+                  )}
                 </p>
               )}
               <label className="checkbox">
@@ -338,50 +363,56 @@ export default function Account() {
                   checked={details.rememberMe}
                   onChange={(e) => setDetails((d) => ({ ...d, rememberMe: e.target.checked }))}
                 />{' '}
-                Se souvenir de moi
+                {textForLocale('Se souvenir de moi')}
               </label>
               <p className="small">
-                Coché : connexion conservée sur cet appareil. Décoché : connexion limitée à cet
-                onglet, jusqu’à sa fermeture.
+                {textForLocale(
+                  'Coché : connexion conservée sur cet appareil. Décoché : connexion limitée à cet onglet, jusqu’à sa fermeture.',
+                )}
               </p>
               <Turnstile key={botKey} onToken={setBotToken} />
               {error && <Notice error>{error}</Notice>}
               <Button type="submit" busy={busy}>
                 {mode === 'create'
-                  ? 'Créer mon compte'
+                  ? textForLocale('Créer mon compte')
                   : mode === 'password'
-                    ? 'Recevoir mon code'
-                    : 'Me connecter'}{' '}
+                    ? textForLocale('Recevoir mon code')
+                    : textForLocale('Me connecter')}{' '}
                 <ArrowRight size={18} />
               </Button>
               {mode === 'sign-in' && (
                 <Button type="button" className="text-link" onClick={() => changeMode('password')}>
-                  Mot de passe oublié / Définir mon mot de passe
+                  {textForLocale('Mot de passe oublié / Définir mon mot de passe')}
                 </Button>
               )}
               <p className="small">
                 {mode === 'password'
-                  ? 'Le code permet de choisir votre mot de passe.'
-                  : 'Un code à 6 chiffres vous sera demandé pour vérifier votre courriel.'}{' '}
-                <Link to="/confidentialite">Confidentialité</Link>
+                  ? textForLocale('Le code permet de choisir votre mot de passe.')
+                  : textForLocale(
+                      'Un code à 6 chiffres vous sera demandé pour vérifier votre courriel.',
+                    )}{' '}
+                <Link to="/confidentialite">{textForLocale('Confidentialité')}</Link>
               </p>
             </form>
           )}
           <aside className="account-note">
             <h2>
-              Un compte.
+              {textForLocale('Un compte.')}
               <br />
-              Votre journée.
+              {textForLocale('Votre journée.')}
             </h2>
             <ul>
               <li>
-                <Check size={16} /> Vos inscriptions au même endroit
+                <Check size={16} />
+                {textForLocale(' Vos inscriptions au même endroit')}
               </li>
               <li>
-                <Check size={16} /> Vos billets pour l’accueil
+                <Check size={16} />
+                {textForLocale(' Vos billets pour l’accueil')}
               </li>
               <li>
-                <Check size={16} /> Les nouvelles de l’organisation
+                <Check size={16} />
+                {textForLocale(' Les nouvelles de l’organisation')}
               </li>
             </ul>
           </aside>

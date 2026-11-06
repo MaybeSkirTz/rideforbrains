@@ -1,7 +1,8 @@
 import { countEvent } from './analytics';
 import Stripe from 'stripe';
 import type { Env } from './types';
-import { now, uuid, isLocal } from './types';
+import { now, uuid, isLocal, parse } from './types';
+import { localeFromHeader, localizedPath } from '../shared/locale';
 import { mailStatement } from './mail';
 import { cad, confirmationMails, removalContacts } from './removal-notifications';
 import { ticketDelivery } from './personal-tickets';
@@ -19,6 +20,9 @@ export function stripe(env: Env) {
 }
 export async function startCheckout(env: Env, order: any) {
   const api = stripe(env);
+  const locale = localeFromHeader(parse(order.event_snapshot)?.locale);
+  const english = locale === 'en-CA';
+  const account = env.APP_URL + localizedPath('/espace', locale);
   const user = await env.DB.prepare('SELECT email FROM user WHERE id=?')
     .bind(order.user_id)
     .first<any>();
@@ -34,16 +38,17 @@ export async function startCheckout(env: Env, order: any) {
           price_data: {
             currency: 'cad',
             product_data: {
-              name: 'Ride For Brains — inscriptions',
-              description: 'Dossier ' + order.id.slice(0, 8),
+              name: english ? 'Ride For Brains — registrations' : 'Ride For Brains — inscriptions',
+              description: (english ? 'Order ' : 'Dossier ') + order.id.slice(0, 8),
             },
             unit_amount: order.amount,
           },
           quantity: 1,
         },
       ],
-      success_url: env.APP_URL + '/espace?commande=' + order.id,
-      cancel_url: env.APP_URL + '/espace?abandon=' + order.id,
+      ...(english ? { locale: 'en' } : {}),
+      success_url: account + '?commande=' + order.id,
+      cancel_url: account + '?abandon=' + order.id,
       expires_at: order.expires_at,
       payment_method_types: ['card'],
     },
@@ -200,7 +205,11 @@ export async function handleStripeEvent(env: Env, event: Stripe.Event, api = str
             regs.map(async (r) =>
               ticketDelivery(
                 env,
-                { ...r, ...JSON.parse(r.activity_snapshot || '{}') },
+                {
+                  ...r,
+                  ...JSON.parse(r.activity_snapshot || '{}'),
+                  event_snapshot: order.event_snapshot,
+                },
                 (
                   await env.DB.prepare('SELECT name FROM user WHERE id=?')
                     .bind(order.user_id)
@@ -380,6 +389,8 @@ export async function applyRefund(env: Env, refund: Stripe.Refund) {
   }
   await env.DB.batch(statements);
   if (!order.removed_at && status === 'succeeded') {
+    const locale = localeFromHeader(parse(order.event_snapshot)?.locale);
+    const english = locale === 'en-CA';
     const buyer = await env.DB.prepare('SELECT email FROM user WHERE id=?')
       .bind(order.user_id)
       .first<any>();
@@ -397,13 +408,20 @@ export async function applyRefund(env: Env, refund: Stripe.Refund) {
         mailStatement(
           env,
           recipient,
-          'Remboursement confirmé — Ride For Brains',
-          'Un remboursement de ' +
-            cad(refund.amount) +
-            ' a été confirmé pour votre inscription. Le délai de disponibilité sur votre compte dépend de votre banque.',
+          english
+            ? 'Refund confirmed — Ride For Brains'
+            : 'Remboursement confirmé — Ride For Brains',
+          english
+            ? `A refund of ${new Intl.NumberFormat(locale, { style: 'currency', currency: 'CAD' }).format(refund.amount / 100)} was confirmed for your registration. Your bank determines when it appears in your account.`
+            : 'Un remboursement de ' +
+                cad(refund.amount) +
+                ' a été confirmé pour votre inscription. Le délai de disponibilité sur votre compte dépend de votre banque.',
           'refund-confirmed:' + refund.id + ':' + (await digest(recipient)),
           recipient === buyer.email ? order.user_id : null,
           job?.registration_id || null,
+          'operational',
+          now(),
+          locale,
         ),
       );
     await env.DB.batch(notifications);

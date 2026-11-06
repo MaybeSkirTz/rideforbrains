@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import { useEffect, useState } from 'react';
 import { api, money, date, statuses } from './api';
 import { useApp } from './context';
@@ -15,33 +16,34 @@ export default function ReceiptPage({ id }: { id: string }) {
   }, [id, user]);
   if (!user)
     return (
-      <Page title="Votre reçu de paiement">
+      <Page title={textForLocale('Votre reçu de paiement')}>
         <Link className="button" to={accountUrl('/recu/' + id)}>
-          Me connecter
+          {textForLocale('Me connecter')}
         </Link>
       </Page>
     );
   return (
-    <Page eyebrow="Ride For Brains" title="Reçu de paiement">
+    <Page eyebrow="Ride For Brains" title={textForLocale('Reçu de paiement')}>
       {error ? (
         <Notice error>{error}</Notice>
       ) : !receipt ? (
-        <p role="status">Chargement du reçu…</p>
+        <p role="status">{textForLocale('Chargement du reçu…')}</p>
       ) : (
         <article className="payment-receipt">
           <p>
-            Commande {receipt.number}
+            {textForLocale('Commande ')}
+            {receipt.number}
             <br />
             {date(receipt.date)}
             <br />
             {statuses[receipt.status] || receipt.status}
           </p>
           <table>
-            <caption>Participations de la commande</caption>
+            <caption>{textForLocale('Participations de la commande')}</caption>
             <thead>
               <tr>
-                <th>Activité</th>
-                <th>Montant après rabais</th>
+                <th>{textForLocale('Activité')}</th>
+                <th>{textForLocale('Montant après rabais')}</th>
               </tr>
             </thead>
             <tbody>
@@ -57,26 +59,29 @@ export default function ReceiptPage({ id }: { id: string }) {
           </table>
           <dl>
             <div>
-              <dt>Total de la commande</dt>
+              <dt>{textForLocale('Total de la commande')}</dt>
               <dd>{money(receipt.total)}</dd>
             </div>
             <div>
-              <dt>Paiement reçu</dt>
+              <dt>{textForLocale('Paiement reçu')}</dt>
               <dd>{money(receipt.paid)}</dd>
             </div>
             <div>
-              <dt>Remboursements confirmés</dt>
+              <dt>{textForLocale('Remboursements confirmés')}</dt>
               <dd>{money(receipt.refunded)}</dd>
             </div>
           </dl>
           <p>
-            Ce document concerne les frais d’inscription Ride For Brains. Il ne constitue pas un
-            reçu de don ni un reçu fiscal.
+            {textForLocale(
+              'Ce document concerne les frais d’inscription Ride For Brains. Il ne constitue pas un reçu de don ni un reçu fiscal.',
+            )}
           </p>
           <div className="actions">
-            <Button onClick={() => window.print()}>Imprimer / enregistrer en PDF</Button>
+            <Button onClick={() => window.print()}>
+              {textForLocale('Imprimer / enregistrer en PDF')}
+            </Button>
             <Link className="text-link" to="/espace">
-              Mon espace
+              {textForLocale('Mon espace')}
             </Link>
           </div>
         </article>

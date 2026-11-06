@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import React, { useEffect, useState } from 'react';
 import { useApp } from './context';
 import { api } from './api';
@@ -39,11 +40,11 @@ export function PublicParticipants() {
   return (
     <Page
       className="public-participants"
-      eyebrow="On prend le départ ensemble"
-      title="Qui sera de la partie ?"
-      intro="Découvrez les participations confirmées, activité par activité."
+      eyebrow={textForLocale('On prend le départ ensemble')}
+      title={textForLocale('Qui sera de la partie ?')}
+      intro={textForLocale('Découvrez les participations confirmées, activité par activité.')}
     >
-      <Field label="Choisir une activité">
+      <Field label={textForLocale('Choisir une activité')}>
         <select
           value={activity}
           onChange={(e) => {
@@ -61,12 +62,16 @@ export function PublicParticipants() {
         </select>
       </Field>
       <p className="small">
-        Les noms apparaissent uniquement avec l’accord du participant ou du parent. Nous affichons
-        le prénom et l’initiale du nom.
+        {textForLocale(
+          'Les noms apparaissent uniquement avec l’accord du participant ou du parent. Nous affichons le prénom et l’initiale du nom.',
+        )}
       </p>
       {error && <Notice error>{error}</Notice>}
       {result && (
-        <section className="roster-panel" aria-label={'Participants — ' + result.activity.name}>
+        <section
+          className="roster-panel"
+          aria-label={textForLocale('Participants — ') + result.activity.name}
+        >
           <div className="roster-heading">
             <div>
               <p className="eyebrow">
@@ -78,13 +83,19 @@ export function PublicParticipants() {
               <strong>{result.total}</strong>
               <span>
                 {' '}
-                participation{result.total > 1 ? 's' : ''} confirmée{result.total > 1 ? 's' : ''}
+                {textForLocale('participation')}
+                {result.total > 1 ? 's' : ''}
+                {textForLocale(' confirmée')}
+                {result.total > 1 ? 's' : ''}
               </span>
             </p>
           </div>
           <p className="small">
-            {result.listed} nom{result.listed > 1 ? 's' : ''} affiché{result.listed > 1 ? 's' : ''}{' '}
-            avec accord.
+            {result.listed}
+            {textForLocale(' nom')}
+            {result.listed > 1 ? 's' : ''}
+            {textForLocale(' affiché')}
+            {result.listed > 1 ? 's' : ''} {textForLocale('avec accord.')}
           </p>
           {!!names.length && (
             <ul className="roster-names">
@@ -96,21 +107,25 @@ export function PublicParticipants() {
           {!names.length && (
             <p>
               {result.total
-                ? 'Les noms restent privés tant que leur affichage n’a pas été autorisé.'
-                : 'Le départ se prépare. Aucune participation confirmée pour le moment.'}
+                ? textForLocale(
+                    'Les noms restent privés tant que leur affichage n’a pas été autorisé.',
+                  )
+                : textForLocale(
+                    'Le départ se prépare. Aucune participation confirmée pour le moment.',
+                  )}
             </p>
           )}
           {result.hasMore && (
             <Button type="button" busy={loading} onClick={() => setPage((p) => p + 1)}>
-              Voir plus de participants
+              {textForLocale('Voir plus de participants')}
             </Button>
           )}
         </section>
       )}
-      {loading && !result && <p role="status">Chargement des participants…</p>}
+      {loading && !result && <p role="status">{textForLocale('Chargement des participants…')}</p>}
       <div className="actions">
         <Link className="button" to={'/inscription?activite=' + activity}>
-          Je participe aussi
+          {textForLocale('Je participe aussi')}
         </Link>
       </div>
     </Page>
@@ -144,11 +159,12 @@ export function ListingPreference({
   return (
     <div className="listing-preference">
       <p className="small">
-        Liste publique : {r.public_listing ? 'prénom et initiale du nom affichés' : 'nom privé'}.
+        {textForLocale('Liste publique : ')}
+        {r.public_listing ? 'prénom et initiale du nom affichés' : 'nom privé'}.
       </p>
       {r.public_listing ? (
         <Button type="button" className="outline" busy={busy} onClick={() => change(false)}>
-          Retirer mon nom de la liste publique
+          {textForLocale('Retirer mon nom de la liste publique')}
         </Button>
       ) : !r.is_minor ? (
         <form
@@ -161,11 +177,13 @@ export function ListingPreference({
             <input type="checkbox" required />
             {publicListingText}
           </label>
-          <Button busy={busy}>Afficher mon nom dans la liste</Button>
+          <Button busy={busy}>{textForLocale('Afficher mon nom dans la liste')}</Button>
         </form>
       ) : (
         <p className="small">
-          L’affichage d’un mineur doit être autorisé par le parent pendant l’inscription.
+          {textForLocale(
+            'L’affichage d’un mineur doit être autorisé par le parent pendant l’inscription.',
+          )}
         </p>
       )}
       {error && <Notice error>{error}</Notice>}

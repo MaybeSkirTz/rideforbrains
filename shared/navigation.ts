@@ -1,8 +1,12 @@
+import { frenchPath } from './locale.ts';
 const base = 'https://internal.rideforbrains.invalid';
 const routes = new Set([
   '/inscription',
   '/attente',
   '/espace',
+  '/mon-jour-j',
+  '/ma-communaute',
+  '/equipes',
   '/admin',
   '/organisation',
   '/transfert',
@@ -21,9 +25,10 @@ export function safeReturnUrl(value: unknown, fallback = '/espace'): string {
     return fallback;
   try {
     const url = new URL(value, base);
+    const route = frenchPath(url.pathname);
     if (
       url.origin !== base ||
-      (!routes.has(url.pathname) && !/^\/(billet|recu)\/[a-f0-9-]{36}$/.test(url.pathname))
+      (!routes.has(route) && !/^\/(billet|recu|equipes|souvenir)\/[a-f0-9-]{36}$/.test(route))
     )
       return fallback;
     return url.pathname + url.search;

@@ -16,6 +16,15 @@ export type Env = {
   TURNSTILE_SITE_KEY?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
+  APPLE_WALLET_SIGNER?: Fetcher;
+  APPLE_WALLET_PASS_TYPE?: string;
+  APPLE_WALLET_TEAM_ID?: string;
+  APPLE_WALLET_ENABLED?: string;
+  GOOGLE_WALLET_ISSUER?: string;
+  GOOGLE_WALLET_CLASS?: string;
+  GOOGLE_WALLET_EMAIL?: string;
+  GOOGLE_WALLET_PRIVATE_KEY?: string;
+  GOOGLE_WALLET_ENABLED?: string;
 };
 export type Actor = {
   id: string;

@@ -58,14 +58,22 @@ beforeEach(async () => {
       'marketing_tokens',
       'unsubscribes',
       'outbox',
+      'important_notices',
       'refund_jobs',
       'stripe_events',
       'audit',
       'history',
+      'wallet_issues',
+      'day_j_progress',
+      'team_members',
+      'teams',
+      'community_posts',
       'registrations',
       'guardian_requests',
       'promo_redemptions',
       'orders',
+      'referral_visits',
+      'referrals',
       'promos',
       'staff',
       'session_privacy',
@@ -178,6 +186,475 @@ async function create(cookie, body = order()) {
   assert.equal(r.status, 201, JSON.stringify(r.data));
   return r.data;
 }
+test('English publishing, legal approval and checkout snapshots are independent of French', async () => {
+  const buyer = await login('english-order@example.test');
+  const header = { 'X-RFB-Locale': 'en-CA' };
+  const route = '/en/activities';
+  const unpublished = await mf.dispatchFetch(origin + route, { redirect: 'manual' });
+  assert.equal(unpublished.status, 302);
+  const s = JSON.parse(initialSettings);
+  s.english = {
+    published: true,
+    legalApproved: false,
+    sourceVersion: s.termsVersion,
+    legalVersion: 'en-2027-v1',
+    terms: 'Test English participation terms.',
+    privacy: 'Test English privacy policy.',
+    activities: {
+      'course-5': { name: 'Test 5 km run', description: 'Test activity description.' },
+    },
+  };
+  const save = () => db.prepare('UPDATE settings SET data=?').bind(JSON.stringify(s)).run();
+  await save();
+  const page = await mf.dispatchFetch(origin + route);
+  assert.equal(page.headers.get('Content-Language'), 'en-CA');
+  const html = await page.text();
+  assert.match(html, /<html lang="en-CA">/);
+  assert.match(html, /rel="canonical" href="http:\/\/localhost:8787\/en\/activities"/);
+  assert.match(html, /hreflang="fr-CA".*\/activites/);
+  assert.match(
+    await (await mf.dispatchFetch(origin + '/sitemap.xml')).text(),
+    /hreflang="en-CA".*\/en\/activities/,
+  );
+  assert.equal(
+    (await mf.dispatchFetch(origin + '/en/terms')).headers.get('X-Robots-Tag'),
+    'noindex, nofollow',
+  );
+  const draft = await request('/public', undefined, '', 'GET', header);
+  assert.equal(draft.data.settings.terms, '');
+  assert.equal(draft.data.settings.registrationOpen, false);
+  assert.equal(draft.data.settings.english, undefined);
+  const enOrder = () => order([participant()], { termsVersion: s.english.legalVersion });
+  const blocked = await request('/orders', enOrder(), buyer.cookie, 'POST', header);
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.data.error, /terms have been updated/i);
+  s.english.legalApproved = true;
+  await save();
+  await db.prepare("UPDATE activities SET price=0 WHERE id='course-5'").run();
+  const paid = await request('/orders', enOrder(), buyer.cookie, 'POST', header);
+  assert.equal(paid.status, 201, JSON.stringify(paid.data));
+  const stored = await db
+    .prepare(
+      'SELECT o.event_snapshot,r.conditions_snapshot,r.conditions_version FROM orders o JOIN registrations r ON r.order_id=o.id WHERE o.id=?',
+    )
+    .bind(paid.data.id)
+    .first();
+  assert.equal(JSON.parse(stored.event_snapshot).locale, 'en-CA');
+  assert.equal(stored.conditions_snapshot, s.english.terms);
+  assert.equal(stored.conditions_version, s.english.legalVersion);
+  const ticket = await db
+    .prepare("SELECT locale,body FROM outbox WHERE dedupe LIKE 'confirmed:%'")
+    .first();
+  assert.equal(ticket.locale, 'en-CA');
+  assert.match(ticket.body, /\/en\/personal-ticket#[a-f0-9]{64}/);
+  s.termsVersion += '-changed';
+  await save();
+  assert.equal((await request('/orders', enOrder(), buyer.cookie, 'POST', header)).status, 409);
+  const french = await request('/public');
+  assert.equal(french.data.settings.terms, s.terms);
+  assert.equal(french.data.settings.termsVersion, s.termsVersion);
+});
+test('English authentication sends the same six-digit flow with localized mail and safe return', async () => {
+  const email = 'english-auth@example.test';
+  const start = await request(
+    '/auth/request/create',
+    {
+      email,
+      password: fixturePassword,
+      firstName: 'Camille',
+      lastName: 'Test',
+      rememberMe: true,
+      returnTo: '/en/my-event-day',
+    },
+    '',
+    'POST',
+    { 'X-RFB-Locale': 'en-CA' },
+  );
+  assert.equal(start.status, 200, JSON.stringify(start.data));
+  const row = await db
+    .prepare("SELECT locale,body FROM outbox WHERE recipient=? AND kind='login'")
+    .bind(email)
+    .first();
+  assert.equal(row.locale, 'en-CA');
+  const code = row.body.match(/Your verification code: (\d{6})/)[1];
+  const verified = await request('/auth/verify-code', {
+    challengeId: start.data.challengeId,
+    code,
+    password: fixturePassword,
+  });
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  assert.equal(verified.data.returnTo, '/en/my-event-day');
+});
+test('Mon jour J reflects the chosen activity and protects tickets and system checklist facts', async () => {
+  const buyer = await login('day-j@example.test');
+  const stranger = await login('other-day-j@example.test');
+  await db
+    .prepare("UPDATE activities SET price=0,route=? WHERE id='course-5'")
+    .bind(
+      JSON.stringify({
+        arrival: '08:15',
+        departure: '09:00',
+        supplies: ['Eau au départ'],
+        mapUrl: 'https://example.test/map',
+      }),
+    )
+    .run();
+  await db
+    .prepare("UPDATE settings SET data=json_set(data,'$.dayJ.parking',?)")
+    .bind('Accès par l’entrée nord')
+    .run();
+  const o = await create(buyer.cookie);
+  const id = (await db.prepare('SELECT id FROM registrations WHERE order_id=?').bind(o.id).first())
+    .id;
+  const pending = await create(buyer.cookie, order([participant('course-10')]));
+  const pendingId = (
+    await db.prepare('SELECT id FROM registrations WHERE order_id=?').bind(pending.id).first()
+  ).id;
+  const get = () => request('/day-j', null, buyer.cookie);
+  const initial = await get();
+  assert.equal(initial.status, 200);
+  assert.equal(initial.res.headers.get('cache-control'), 'no-store');
+  assert.equal(initial.data.event.details.parking, 'Accès par l’entrée nord');
+  const entry = initial.data.entries.find((row) => row.id === id);
+  assert.equal(entry.arrival, '08:15');
+  assert.equal(entry.departure, '09:00');
+  assert.deepEqual(entry.supplies, ['Eau au départ']);
+  assert.equal(entry.routePath, '/activites/course-5');
+  assert.equal(entry.payment, 'free');
+  assert.equal(entry.ticketReady, true);
+  assert.equal(entry.consentsComplete, true);
+  const waiting = initial.data.entries.find((row) => row.id === pendingId);
+  assert.equal(waiting.ticketReady, false);
+  assert.equal(waiting.payment, 'pending');
+  assert.equal(waiting.arrival, undefined);
+  assert.equal(entry.ticket, undefined);
+  assert.equal(entry.email, undefined);
+  assert.deepEqual((await request('/day-j', null, stranger.cookie)).data.entries, []);
+  const mark = (step, cookie = buyer.cookie, done = true) =>
+    request('/day-j/' + id + '/progress', { step, done }, cookie, 'PUT');
+  assert.equal((await mark('equipment', stranger.cookie)).status, 404);
+  assert.equal((await mark('payment')).status, 400);
+  assert.equal((await mark('equipment')).status, 200);
+  assert.equal((await mark('equipment')).status, 200);
+  assert.deepEqual((await get()).data.entries.find((row) => row.id === id).progress, ['equipment']);
+  assert.equal((await mark('equipment', buyer.cookie, false)).status, 200);
+  assert.deepEqual((await get()).data.entries.find((row) => row.id === id).progress, []);
+  assert.equal((await request('/public')).data.settings.dayJ, undefined);
+});
+
+test('Important notices freeze a reviewed audience, deduplicate addresses and schedule in Toronto', async () => {
+  const buyer = await login('notice-buyer@example.test');
+  const admin = await login('notice-staff@example.test', 'organizer', ['communications']);
+  await db.prepare("UPDATE activities SET price=0 WHERE id='course-5'").run();
+  await create(buyer.cookie, order([participant(), participant()]));
+  await create(buyer.cookie, order([participant('course-10', { email: 'pending@example.test' })]));
+  const draft = {
+    id: randomUUID(),
+    category: 'weather',
+    audience: { kind: 'activity', id: 'course-5' },
+    subject: 'Consignes météo',
+    message: 'Consultez le point de départ.',
+    schedule: '2099-08-21T08:00',
+  };
+  assert.equal((await request('/admin/mail/notices/preview', draft, buyer.cookie)).status, 403);
+  assert.equal((await request('/admin/mail/notices', draft, admin.cookie, 'PUT')).status, 200);
+  const preview = await request('/admin/mail/notices/preview', draft, admin.cookie);
+  assert.equal(preview.status, 200, JSON.stringify(preview.data));
+  assert.equal(preview.data.count, 1);
+  const send = (value) =>
+    request(
+      '/admin/mail/notices/send',
+      { draft: value, signature: preview.data.signature, confirm: true },
+      admin.cookie,
+    );
+  assert.equal((await send({ ...draft, message: 'Message modifié' })).status, 409);
+  assert.equal((await send(draft)).status, 201);
+  assert.equal((await send(draft)).data.alreadyQueued, true);
+  const stored = (
+    await db
+      .prepare('SELECT kind,available_at,recipient FROM outbox WHERE notice_id=?')
+      .bind(draft.id)
+      .all()
+  ).results;
+  assert.deepEqual(stored, [
+    {
+      kind: 'operational',
+      available_at: Date.parse('2099-08-21T12:00:00Z') / 1000,
+      recipient: 'camille@example.test',
+    },
+  ]);
+  assert.deepEqual((await request('/day-j', null, buyer.cookie)).data.messages, []);
+  const all = await request(
+    '/admin/mail/notices/preview',
+    { ...draft, audience: { kind: 'all' } },
+    admin.cookie,
+  );
+  assert.equal(all.data.count, 1);
+});
+
+test('Referral URLs are opaque, visits deduplicate and only other confirmed participations count', async () => {
+  const inviter = await login('inviter@example.test');
+  const buyer = await login('invited@example.test');
+  const admin = await login('referral-admin@example.test', 'organizer', ['event']);
+  assert.equal((await request('/referral', {}, inviter.cookie)).status, 403);
+  await db.prepare("UPDATE activities SET price=0 WHERE id='course-5'").run();
+  await create(inviter.cookie);
+  const first = await request('/referral', {}, inviter.cookie);
+  assert.match(first.data.path, /^\/r\/[a-f0-9]{32}$/);
+  assert.equal((await request('/referral', {}, inviter.cookie)).data.path, first.data.path);
+  const visit = (cookie) =>
+    mf.dispatchFetch(origin + first.data.path, {
+      redirect: 'manual',
+      headers: cookie ? { Cookie: cookie } : {},
+    });
+  const clicked = await visit();
+  assert.equal(clicked.status, 302);
+  assert.equal(clicked.headers.get('location'), '/activites');
+  const referralCookies = clicked.headers
+    .getSetCookie()
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  await visit(referralCookies);
+  await create(inviter.cookie + '; ' + referralCookies);
+  const basket = order();
+  await create(buyer.cookie + '; ' + referralCookies, basket);
+  await request('/orders', basket, buyer.cookie + '; ' + referralCookies);
+  await create(buyer.cookie + '; ' + referralCookies, order([participant('course-10')]));
+  const result = await request('/admin/referrals', null, admin.cookie);
+  assert.equal(result.data[0].visits, 1);
+  assert.equal(result.data[0].registrations, 1);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM referral_attributions').first()).n, 2);
+});
+
+test('Teams require ownership, private invitations, moderation and a separate first-name preference', async () => {
+  const owner = await login('team-owner@example.test');
+  const member = await login('team-member@example.test');
+  const staff = await login('team-staff@example.test', 'organizer', [
+    'community',
+    'communications',
+  ]);
+  await db.prepare('UPDATE activities SET price=0').run();
+  const ownerOrder = await create(
+    owner.cookie,
+    order([participant('course-5', { email: 'team-owner@example.test' })]),
+  );
+  const memberOrder = await create(
+    member.cookie,
+    order([
+      participant('course-10', { email: 'team-member@example.test' }),
+      participant('course-2'),
+    ]),
+  );
+  const getIds = async (orderId) =>
+    (
+      await db
+        .prepare('SELECT id,activity_id FROM registrations WHERE order_id=?')
+        .bind(orderId)
+        .all()
+    ).results;
+  const [{ id: ownerReg }] = await getIds(ownerOrder.id);
+  const memberRegs = await getIds(memberOrder.id);
+  const memberReg = memberRegs.find((row) => row.activity_id === 'course-10').id;
+  const createTeam = (cookie, registrationId, visibility) =>
+    request('/teams', { registrationId, name: 'Groupe local', visibility }, cookie);
+  assert.equal((await createTeam(member.cookie, ownerReg, 'private')).status, 404);
+  const privateTeam = await createTeam(owner.cookie, ownerReg, 'private');
+  assert.equal(privateTeam.status, 201, JSON.stringify(privateTeam.data));
+  const path = '/teams/' + privateTeam.data.id;
+  assert.equal((await request(path)).status, 404);
+  assert.equal((await request(path, null, member.cookie)).status, 404);
+  assert.equal(
+    (await request(path + '/join', { registrationId: memberReg }, member.cookie)).status,
+    409,
+  );
+  const code = privateTeam.data.invite.split('#')[1];
+  assert.equal(
+    (await request(path + '/join', { registrationId: memberReg, code }, member.cookie)).status,
+    201,
+  );
+  const privateView = await request(path, null, member.cookie);
+  assert.equal(privateView.data.members, 2);
+  assert.equal(privateView.data.km, 15);
+  assert.deepEqual(privateView.data.firstNames, []);
+  assert.doesNotMatch(JSON.stringify(privateView.data), /invite_hash|owner_id|example.test/);
+  const preview = await request(
+    '/admin/mail/notices/preview',
+    {
+      id: randomUUID(),
+      category: 'information',
+      audience: { kind: 'team', id: privateTeam.data.id },
+      subject: 'Consigne équipe',
+      message: 'Retrouvons-nous près de l’accueil.',
+    },
+    staff.cookie,
+  );
+  assert.equal(preview.data.count, 2);
+  assert.equal(
+    (await request('/team-members/' + memberReg, {}, member.cookie, 'DELETE')).status,
+    200,
+  );
+  assert.equal((await request(path, null, member.cookie)).status, 404);
+  const publicTeam = await createTeam(member.cookie, memberReg, 'public');
+  assert.equal(publicTeam.status, 201);
+  assert.deepEqual((await request('/teams')).data, []);
+  const publicPath = '/teams/' + publicTeam.data.id;
+  const moderate = '/admin/community/teams/' + publicTeam.data.id;
+  assert.equal((await request(moderate, { status: 'approved' }, member.cookie, 'PUT')).status, 403);
+  assert.equal((await request(moderate, { status: 'approved' }, staff.cookie, 'PUT')).status, 200);
+  assert.deepEqual((await request(publicPath)).data.firstNames, []);
+  assert.equal(
+    (await request('/team-members/' + memberReg, { showFirst: true }, member.cookie, 'PUT')).status,
+    200,
+  );
+  assert.deepEqual((await request(publicPath)).data.firstNames, ['Camille']);
+  assert.equal(
+    (await request('/team-members/' + memberReg, { showFirst: false }, member.cookie, 'PUT'))
+      .status,
+    200,
+  );
+  assert.deepEqual((await request(publicPath)).data.firstNames, []);
+});
+
+test('Stories and dedications stay private until consent and moderation and can be withdrawn', async () => {
+  const author = await login('story-author@example.test');
+  const staff = await login('story-staff@example.test', 'organizer', ['community']);
+  await db.prepare('UPDATE activities SET price=0').run();
+  await create(
+    author.cookie,
+    order([participant('course-5', { email: 'story-author@example.test' })]),
+  );
+  for (const kind of ['story', 'dedication']) {
+    const input = { kind, text: 'Pour ma famille', consent: false, submit: false };
+    const edit = (x) =>
+      request('/community/contribution', { ...input, ...x }, author.cookie, 'PUT');
+    const publish = (post) =>
+      request(
+        '/admin/community/posts/' + post.id,
+        { status: 'approved', revision: post.revision },
+        staff.cookie,
+        'PUT',
+      );
+    assert.equal((await edit({ submit: true })).status, 403);
+    assert.equal((await edit({})).status, 200);
+    assert.deepEqual((await request('/admin/community/posts', null, staff.cookie)).data, []);
+    assert.equal((await edit({ submit: true, consent: true })).status, 200);
+    assert.deepEqual((await request('/community/' + kind)).data, []);
+    const [post] = (await request('/admin/community/posts', null, staff.cookie)).data;
+    assert.equal((await publish(post)).status, 200);
+    const [published] = (await request('/community/' + kind)).data;
+    assert.equal(published.text, input.text);
+    assert.equal(published.user_id, undefined);
+    await request('/community/contribution/' + kind, {}, author.cookie, 'DELETE');
+    assert.deepEqual((await request('/community/' + kind)).data, []);
+    assert.equal((await publish(post)).status, 409);
+  }
+});
+
+test('Public impact only includes current valid non-test participations and respects visibility and the threshold', async () => {
+  const user = await login('impact@example.test');
+  const admin = await login('impact-admin@example.test', 'organizer', ['event']);
+  await db.prepare("UPDATE activities SET price=0 WHERE id!='course-2'").run();
+  const valid = await create(
+    user.cookie,
+    order([participant('velo-100'), participant('course-5')]),
+  );
+  const excluded = await create(user.cookie, order([participant('course-10')]));
+  await create(user.cookie, order([participant('course-2')]));
+  const mark = await request(
+    '/admin/impact/test-order',
+    { orderId: excluded.id, test: true },
+    admin.cookie,
+    'PUT',
+  );
+  assert.equal(mark.status, 200);
+  const set = (threshold) =>
+    db
+      .prepare("UPDATE settings SET data=json_set(data,'$.impact',json(?))")
+      .bind(
+        JSON.stringify({
+          minimumParticipants: threshold,
+          participants: true,
+          km: true,
+          teams: false,
+          volunteers: false,
+        }),
+      )
+      .run();
+  await set(3);
+  assert.deepEqual((await request('/impact')).data, {});
+  await set(2);
+  assert.deepEqual((await request('/impact')).data, { participants: 2, km: 105 });
+  await db
+    .prepare(
+      "UPDATE registrations SET status='cancelled' WHERE order_id=? AND activity_id='course-5'",
+    )
+    .bind(valid.id)
+    .run();
+  await set(1);
+  assert.deepEqual((await request('/impact')).data, { participants: 1, km: 100 });
+  await db
+    .prepare("UPDATE settings SET data=json_set(data,'$.financialTransparency',json(?))")
+    .bind(
+      JSON.stringify({
+        title: 'Où va mon argent?',
+        introduction: '',
+        categories: [
+          { name: 'Sécurité', enabled: true, description: 'Signalisation' },
+          { name: 'Brouillon', enabled: false, description: 'Privé' },
+        ],
+      }),
+    )
+    .run();
+  const config = await request('/public');
+  assert.deepEqual(
+    config.data.settings.financialTransparency.categories.map((row) => row.name),
+    ['Sécurité'],
+  );
+});
+
+test('A finisher souvenir requires an owned checked-in ticket after the purchased event date', async () => {
+  const buyer = await login('finisher@example.test');
+  const stranger = await login('finisher-stranger@example.test');
+  await db.prepare("UPDATE activities SET price=0 WHERE id='course-5'").run();
+  const o = await create(buyer.cookie);
+  const r = await db.prepare('SELECT id FROM registrations WHERE order_id=?').bind(o.id).first();
+  const path = '/finisher/' + r.id;
+  assert.equal((await request(path, {}, buyer.cookie)).status, 404);
+  await db.prepare('UPDATE registrations SET checked_at=unixepoch() WHERE id=?').bind(r.id).run();
+  await db
+    .prepare(
+      "UPDATE orders SET event_snapshot=json_set(event_snapshot,'$.date','2099-08-21','$.eventAt','2099-08-21T07:30:00-04:00') WHERE id=?",
+    )
+    .bind(o.id)
+    .run();
+  assert.equal((await request(path, {}, buyer.cookie)).status, 409);
+  await db
+    .prepare(
+      "UPDATE orders SET event_snapshot=json_set(event_snapshot,'$.date','2020-08-21','$.eventAt','2020-08-21T07:30:00-04:00') WHERE id=?",
+    )
+    .bind(o.id)
+    .run();
+  assert.equal((await request(path, {}, stranger.cookie)).status, 404);
+  const issued = await request(path, {}, buyer.cookie);
+  assert.equal(issued.status, 200);
+  assert.deepEqual(Object.keys(issued.data).sort(), [
+    'activity',
+    'distance',
+    'eventAt',
+    'firstName',
+    'lastName',
+    'sport',
+  ]);
+  assert.equal((await request('/day-j', null, buyer.cookie)).data.entries[0].finisherReady, true);
+  await request(path, {}, buyer.cookie);
+  assert.equal(
+    (await db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action='finisher.issued'").first()).n,
+    1,
+  );
+  await db.prepare('UPDATE registrations SET checked_at=NULL WHERE id=?').bind(r.id).run();
+  assert.equal((await request(path, {}, buyer.cookie)).status, 404);
+});
+
 async function signedEvent(event) {
   const payload = JSON.stringify({ livemode: false, ...event });
   const t = Math.floor(Date.now() / 1000),
@@ -3668,7 +4145,7 @@ test('Production team data requires the app session and permission while owner r
   }
 });
 
-async function productionMailFixture(extraBindings = {}) {
+async function productionMailFixture(extraBindings = {}, services = {}) {
   const u = await login('mailer@example.test', 'organizer', ['communications']);
   const external = createFetchMock();
   external.disableNetConnect();
@@ -3687,7 +4164,7 @@ async function productionMailFixture(extraBindings = {}) {
       ...extraBindings,
     },
     fetchMock: external,
-    serviceBindings: { ASSETS: () => new Response('fixture') },
+    serviceBindings: { ASSETS: () => new Response('fixture'), ...services },
   });
   const pdb = await prod.getD1Database('DB');
   await migrate(pdb);
@@ -3724,8 +4201,65 @@ async function productionMailFixture(extraBindings = {}) {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-  return { prod, pdb, external, call };
+  return { prod, pdb, external, call, cookie };
 }
+test('Wallet stays disabled without provider config and issues only the current private ticket', async () => {
+  const unavailable = await request('/wallet/apple', { registrationId: randomUUID() });
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual((await request('/public')).data.services.wallet, {
+    apple: false,
+    google: false,
+  });
+  const passes = [];
+  const f = await productionMailFixture(
+    {
+      APPLE_WALLET_ENABLED: 'true',
+      APPLE_WALLET_PASS_TYPE: 'pass.ca.rideforbrains.test',
+      APPLE_WALLET_TEAM_ID: 'TEST123456',
+    },
+    {
+      APPLE_WALLET_SIGNER: async (request) => {
+        passes.push(await request.json());
+        return new Response('simulated signer', {
+          headers: { 'Content-Type': 'application/vnd.apple.pkpass' },
+        });
+      },
+    },
+  );
+  try {
+    await f.pdb.prepare("UPDATE activities SET price=0 WHERE id='course-5'").run();
+    const created = await f.call('/orders', order());
+    assert.equal(created.status, 201, await created.clone().text());
+    const registration = await f.pdb.prepare('SELECT id,ticket FROM registrations').first();
+    assert.equal((await f.call('/wallet/apple', { registrationId: randomUUID() })).status, 404);
+    const signed = await f.call('/wallet/apple', { registrationId: registration.id });
+    assert.equal(signed.status, 200, await signed.clone().text());
+    assert.match(signed.headers.get('content-type'), /apple.pkpass/);
+    assert.equal(passes[0].barcodes[0].message, registration.ticket);
+    assert.doesNotMatch(JSON.stringify(passes[0]), /example.test|emergency/);
+    const old = passes[0].serialNumber;
+    await f.pdb
+      .prepare('UPDATE registrations SET ticket=? WHERE id=?')
+      .bind(randomUUID() + randomUUID(), registration.id)
+      .run();
+    assert.ok(
+      (await f.pdb.prepare('SELECT revoked_at FROM wallet_issues WHERE id=?').bind(old).first())
+        .revoked_at,
+    );
+    const replacement = await f.call('/wallet/apple', { registrationId: registration.id });
+    assert.equal(replacement.status, 200);
+    assert.notEqual(passes[1].barcodes[0].message, registration.ticket);
+    assert.notEqual(passes[1].serialNumber, old);
+    await f.pdb
+      .prepare("UPDATE registrations SET status='cancelled' WHERE id=?")
+      .bind(registration.id)
+      .run();
+    assert.equal((await f.call('/wallet/apple', { registrationId: registration.id })).status, 404);
+  } finally {
+    await f.prod.dispose();
+    await f.external.close();
+  }
+});
 async function waitForMailState(database, id, state) {
   for (let i = 0; i < 150; i++) {
     const row = await database.prepare('SELECT * FROM outbox WHERE id=?').bind(id).first();

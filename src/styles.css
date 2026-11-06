@@ -2723,6 +2723,17 @@ td .text-link {
 body {
   overflow-x: clip;
 }
+.language-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+.language-choice a[aria-current] {
+  font-weight: 800;
+  text-decoration: underline;
+}
 .hero-copy {
   min-width: 0;
 }

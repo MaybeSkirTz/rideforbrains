@@ -1,19 +1,21 @@
+import { t as textForLocale } from './locale-copy';
 import Scene from './Scene';
 import { Link } from './ui';
 import { useApp } from './context';
 export function NeuralStory() {
   return (
     <section id="connexions" className="neural-explainer editorial-section">
-      <p className="section-index">Du cerveau au mouvement</p>
+      <p className="section-index">{textForLocale('Du cerveau au mouvement')}</p>
       <div className="editorial-heading">
         <h2>
-          Avant le premier pas,
+          {textForLocale('Avant le premier pas,')}
           <br />
-          <em>une connexion.</em>
+          <em>{textForLocale('une connexion.')}</em>
         </h2>
         <p>
-          Ces illustrations évoquent le signal et le mouvement. Elles racontent le lien entre notre
-          cause et les trois activités de la journée.
+          {textForLocale(
+            'Ces illustrations évoquent le signal et le mouvement. Elles racontent le lien entre notre cause et les trois activités de la journée.',
+          )}
         </p>
       </div>
       <div className="motion-triptych">
@@ -21,20 +23,24 @@ export function NeuralStory() {
           {
             mode: 'synapse',
             number: '01',
-            title: 'Les connexions.',
-            text: 'Les neurones communiquent entre eux. Les points lumineux illustrent cet échange.',
+            title: textForLocale('Les connexions.'),
+            text: textForLocale(
+              'Les neurones communiquent entre eux. Les points lumineux illustrent cet échange.',
+            ),
           },
           {
             mode: 'signal',
             number: '02',
-            title: 'Le signal.',
-            text: 'Le signal circule. Les impulsions avancent le long des fibres.',
+            title: textForLocale('Le signal.'),
+            text: textForLocale('Le signal circule. Les impulsions avancent le long des fibres.'),
           },
           {
             mode: 'network',
             number: '03',
-            title: 'Le mouvement.',
-            text: 'Les connexions forment un réseau : l’image qui relie notre événement à la recherche sur le cerveau.',
+            title: textForLocale('Le mouvement.'),
+            text: textForLocale(
+              'Les connexions forment un réseau : l’image qui relie notre événement à la recherche sur le cerveau.',
+            ),
           },
         ].map((s) => (
           <figure key={s.mode}>
@@ -56,22 +62,25 @@ export function GatheringStory() {
     <section className="gathering-story editorial-section">
       <div className="editorial-heading">
         <div>
-          <p className="section-index">Trois activités. Une même journée.</p>
+          <p className="section-index">{textForLocale('Trois activités. Une même journée.')}</p>
           <h2>
-            Des chemins différents.
+            {textForLocale('Des chemins différents.')}
             <br />
-            <em>Un rendez-vous commun.</em>
+            <em>{textForLocale('Un rendez-vous commun.')}</em>
           </h2>
         </div>
         <p>
-          Bleu pour rouler. Vert pour courir. Lime pour marcher. Les trajectoires se rejoignent :
-          chacun participe à sa façon.
+          {textForLocale(
+            'Bleu pour rouler. Vert pour courir. Lime pour marcher. Les trajectoires se rejoignent : chacun participe à sa façon.',
+          )}
         </p>
       </div>
       <Scene mode="convergence" />
-      <p className="small">Illustration symbolique : les parcours officiels restent à confirmer.</p>
+      <p className="small">
+        {textForLocale('Illustration symbolique : les parcours officiels restent à confirmer.')}
+      </p>
       <Link to="/inscription" className="button">
-        Choisir mon activité —{' '}
+        {textForLocale('Choisir mon activité —')}{' '}
         {new Date(data.settings.eventAt).toLocaleDateString('fr-CA', {
           day: 'numeric',
           month: 'long',
@@ -89,14 +98,18 @@ export function ArrivalStory() {
         <Scene mode="arrival" time={data.settings.reception} />
       </div>
       <div>
-        <p className="section-index">Le premier repère</p>
-        <h3>L’accueil à {data.settings.reception.replace(':', ' h ')}.</h3>
+        <p className="section-index">{textForLocale('Le premier repère')}</p>
+        <h3>
+          {textForLocale('L’accueil à ')}
+          {data.settings.reception.replace(':', ' h ')}.
+        </h3>
         <p>
-          Les participants se retrouvent avant leur activité. L’horloge affiche l’heure d’ouverture
-          de l’accueil; les heures de départ seront confirmées séparément.
+          {textForLocale(
+            'Les participants se retrouvent avant leur activité. L’horloge affiche l’heure d’ouverture de l’accueil; les heures de départ seront confirmées séparément.',
+          )}
         </p>
         <Link to="/infos" className="text-link">
-          Préparer ma journée ↗
+          {textForLocale('Préparer ma journée ↗')}
         </Link>
       </div>
     </section>
@@ -107,18 +120,24 @@ export function SportMotionStory({ sport }: { sport: string }) {
     {
       velo: {
         mode: 'pedal',
-        title: 'Le rythme vient du pédalier.',
-        text: 'Le pédalier entraîne la roue. Cette animation accompagne les 100 kilomètres à vélo; elle ne représente pas le parcours officiel.',
+        title: textForLocale('Le rythme vient du pédalier.'),
+        text: textForLocale(
+          'Le pédalier entraîne la roue. Cette animation accompagne les 100 kilomètres à vélo; elle ne représente pas le parcours officiel.',
+        ),
       },
       course: {
         mode: 'stride',
-        title: 'Une foulée après l’autre.',
-        text: 'L’alternance des appuis donne le rythme. Choisissez 2, 5 ou 10 kilomètres selon l’activité qui vous ressemble.',
+        title: textForLocale('Une foulée après l’autre.'),
+        text: textForLocale(
+          'L’alternance des appuis donne le rythme. Choisissez 2, 5 ou 10 kilomètres selon l’activité qui vous ressemble.',
+        ),
       },
       marche: {
         mode: 'steps',
-        title: 'Trouver son pas.',
-        text: 'Les pas alternent et le chemin se dessine. Cinq kilomètres pour participer à pied.',
+        title: textForLocale('Trouver son pas.'),
+        text: textForLocale(
+          'Les pas alternent et le chemin se dessine. Cinq kilomètres pour participer à pied.',
+        ),
       },
     } as any
   )[sport];
@@ -127,7 +146,7 @@ export function SportMotionStory({ sport }: { sport: string }) {
     <section className="sport-motion-story">
       <Scene mode={s.mode} />
       <div>
-        <p className="section-index">Le mouvement en détail</p>
+        <p className="section-index">{textForLocale('Le mouvement en détail')}</p>
         <h2>{s.title}</h2>
         <p>{s.text}</p>
       </div>
@@ -139,7 +158,9 @@ export function TeamMotion() {
     <div className="team-motion">
       <Scene mode="team" />
       <p>
-        Thomas, François-Xavier et Sammy : trois personnes réunies pour organiser la même journée.
+        {textForLocale(
+          'Thomas, François-Xavier et Sammy : trois personnes réunies pour organiser la même journée.',
+        )}
       </p>
     </div>
   );
@@ -149,12 +170,12 @@ export function PreparationMotion() {
     <section className="sport-motion-story">
       <Scene mode="preparation" />
       <div>
-        <p className="section-index">Avant de partir</p>
-        <h2>Préparer son équipement.</h2>
+        <p className="section-index">{textForLocale('Avant de partir')}</p>
+        <h2>{textForLocale('Préparer son équipement.')}</h2>
         <p>
-          Un casque pour le vélo et de quoi s’hydrater : cette illustration rappelle de préparer son
-          matériel. Les consignes complètes et les ravitaillements seront précisés par
-          l’organisation.
+          {textForLocale(
+            'Un casque pour le vélo et de quoi s’hydrater : cette illustration rappelle de préparer son matériel. Les consignes complètes et les ravitaillements seront précisés par l’organisation.',
+          )}
         </p>
       </div>
     </section>

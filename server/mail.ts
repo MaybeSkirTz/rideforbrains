@@ -1,6 +1,7 @@
 import type { Env } from './types';
 import { isLocal, uuid, now } from './types';
 import { digest } from './crypto';
+import type { Locale } from '../shared/locale';
 
 export function mailStatement(
   env: Env,
@@ -12,9 +13,10 @@ export function mailStatement(
   registrationId: string | null = null,
   kind = 'operational',
   available = now(),
+  locale: Locale = 'fr-CA',
 ) {
   return env.DB.prepare(
-    'INSERT OR IGNORE INTO outbox(id,dedupe,user_id,registration_id,recipient,subject,body,kind,available_at,status) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    'INSERT OR IGNORE INTO outbox(id,dedupe,user_id,registration_id,recipient,subject,body,kind,available_at,status,locale) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
   ).bind(
     uuid(),
     dedupe,
@@ -26,6 +28,7 @@ export function mailStatement(
     kind,
     available,
     isLocal(env) ? 'development' : 'queued',
+    locale,
   );
 }
 export async function enqueueMail(
@@ -66,7 +69,7 @@ export async function processMail(env: Env) {
       }
     }
     // Provider idempotency is retained for 24 hours. Older ambiguous sends need review.
-    if (row.attempts > 0 && row.created_at < now() - 23 * 3600) {
+    if (row.attempts > 0 && (row.first_attempt_at ?? row.created_at) < now() - 23 * 3600) {
       await env.DB.prepare(
         "UPDATE outbox SET status='review',error='Délai de déduplication du prestataire dépassé' WHERE id=?",
       )
@@ -75,7 +78,7 @@ export async function processMail(env: Env) {
       continue;
     }
     const claimed = await env.DB.prepare(
-      "UPDATE outbox SET status='sending',lease_until=?,attempts=attempts+1 WHERE id=? AND (status IN ('queued','retry') OR (status='sending' AND lease_until<?)) RETURNING id",
+      "UPDATE outbox SET status='sending',lease_until=?,attempts=attempts+1,first_attempt_at=COALESCE(first_attempt_at,CASE WHEN attempts>0 THEN created_at ELSE unixepoch() END) WHERE id=? AND (status IN ('queued','retry') OR (status='sending' AND lease_until<?)) RETURNING id",
     )
       .bind(now() + 120, row.id, now())
       .first();
@@ -95,14 +98,59 @@ export async function processMail(env: Env) {
     const budget = Math.max(1, Math.min(100000, Number(env.MAIL_DAILY_LIMIT) || 90));
     if (limit.count > budget) {
       await env.DB.prepare(
-        "UPDATE outbox SET status='retry',available_at=?,lease_until=NULL,error='Budget quotidien d’envoi atteint' WHERE id=?",
+        "UPDATE outbox SET status='retry',available_at=?,lease_until=NULL,attempts=attempts-1,first_attempt_at=CASE WHEN attempts=1 THEN NULL ELSE first_attempt_at END,error='Budget quotidien d’envoi atteint' WHERE id=?",
       )
         .bind((Math.floor(now() / 86400) + 1) * 86400, row.id)
         .run();
       continue;
     }
     try {
-      const ticketToken = row.body.match(/\/billet-personnel#([a-f0-9]{64})/);
+      if (row.notice_id) {
+        const notice = await env.DB.prepare(
+          "SELECT json_extract(payload,'$.audience.kind') AS target,json_extract(payload,'$.audience.id') AS team FROM important_notices WHERE id=?",
+        )
+          .bind(row.notice_id)
+          .first<{ target: string; team: string }>();
+        const noLongerTargeted =
+          notice?.target === 'team'
+            ? !(await env.DB.prepare(
+                "SELECT 1 FROM team_members m JOIN teams t ON t.id=m.team_id WHERE m.registration_id=? AND m.team_id=? AND m.user_id=? AND t.status IN ('approved','pending')",
+              )
+                .bind(row.registration_id, notice.team, row.user_id)
+                .first())
+            : notice?.target === 'volunteers'
+              ? !(await env.DB.prepare(
+                  "SELECT 1 FROM submissions WHERE lower(email)=? AND kind='volunteer' AND stage IN ('confirmed','present')",
+                )
+                  .bind(row.recipient)
+                  .first())
+              : false;
+        if (noLongerTargeted) {
+          await env.DB.prepare(
+            "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Le destinataire ne fait plus partie du groupe' WHERE id=?",
+          )
+            .bind(row.id)
+            .run();
+          continue;
+        }
+      }
+      if (
+        row.notice_id &&
+        row.registration_id &&
+        !(await env.DB.prepare(
+          "SELECT 1 FROM visible_registrations WHERE id=? AND lower(email)=? AND status IN ('confirmed','partially_refunded')",
+        )
+          .bind(row.registration_id, row.recipient)
+          .first())
+      ) {
+        await env.DB.prepare(
+          "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Participation ou adresse modifiée' WHERE id=?",
+        )
+          .bind(row.id)
+          .run();
+        continue;
+      }
+      const ticketToken = row.body.match(/\/(?:billet-personnel|personal-ticket)#([a-f0-9]{64})/);
       if (
         ticketToken &&
         !(await env.DB.prepare(
@@ -143,17 +191,23 @@ export async function processMail(env: Env) {
           to: [row.recipient],
           subject: row.subject,
           text: row.body,
-          html: brandedMail(row.subject, row.body, env.APP_URL),
+          html: brandedMail(row.subject, row.body, env.APP_URL, row.locale),
         }),
       });
       if (!res.ok) throw new Error('Prestataire HTTP ' + res.status);
       const data = (await res.json()) as { id: string };
       if (!data.id) throw new Error('Identifiant de courriel absent');
-      await env.DB.prepare(
+      const accepted = env.DB.prepare(
         "UPDATE outbox SET status=CASE WHEN EXISTS(SELECT 1 FROM mail_events WHERE provider_id=? AND type IN ('email.bounced','email.complained')) THEN 'bounced' WHEN EXISTS(SELECT 1 FROM mail_events WHERE provider_id=? AND type='email.delivered') THEN 'delivered' ELSE 'accepted' END,provider_id=?,error=NULL,lease_until=NULL WHERE id=?",
-      )
-        .bind(data.id, data.id, data.id, row.id)
-        .run();
+      ).bind(data.id, data.id, data.id, row.id);
+      if (row.notice_id)
+        await env.DB.batch([
+          accepted,
+          env.DB.prepare(
+            "INSERT INTO audit(id,actor,action,target) VALUES(?,'service:mail','notice.sent',?)",
+          ).bind(uuid(), row.notice_id),
+        ]);
+      else await accepted.run();
     } catch (e) {
       await env.DB.prepare(
         'UPDATE outbox SET status=?,error=?,available_at=?,lease_until=NULL WHERE id=?',
@@ -169,7 +223,12 @@ export async function processMail(env: Env) {
   }
 }
 
-export function brandedMail(subject: string, body: string, origin: string) {
+export function brandedMail(
+  subject: string,
+  body: string,
+  origin: string,
+  locale: Locale = 'fr-CA',
+) {
   const esc = (s: string) =>
     s.replace(
       /[&<>"']/g,
@@ -181,13 +240,21 @@ export function brandedMail(subject: string, body: string, origin: string) {
       (url) => '<a style="color:#185f57" href="' + url + '">' + url + '</a>',
     )
     .replace(/\r?\n/g, '<br>');
+  const footer =
+    locale === 'en-CA'
+      ? 'Ride For Brains · Cycling, running and walking.<br>Donations are made through the Ride For Brains fundraising page on Brain Canada’s official platform, separately from registration fees.'
+      : 'Ride For Brains · Vélo, course et marche.<br>Les dons à Brain Canada sont effectués séparément des frais d’inscription.';
   return (
-    '<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width"></head><body style="margin:0;background:#f5f4ed;color:#12312f;font-family:Arial,sans-serif"><table role="presentation" style="width:100%;max-width:600px;margin:auto"><tr><td style="padding:32px"><img src="' +
+    '<!doctype html><html lang="' +
+    (locale === 'en-CA' ? 'en-CA' : 'fr') +
+    '"><head><meta name="viewport" content="width=device-width"></head><body style="margin:0;background:#f5f4ed;color:#12312f;font-family:Arial,sans-serif"><table role="presentation" style="width:100%;max-width:600px;margin:auto"><tr><td style="padding:32px"><img src="' +
     esc(origin) +
     '/assets/ride-for-brains.png" alt="Ride For Brains" width="84" height="84"><h1 style="font-size:25px;line-height:1.2">' +
     esc(subject) +
     '</h1><p style="font-size:16px;line-height:1.65;overflow-wrap:anywhere">' +
     text +
-    '</p><hr style="border:0;border-top:1px solid #bdc8bc"><p style="font-size:12px;line-height:1.5">Ride For Brains · Vélo, course et marche.<br>Les dons à Brain Canada sont effectués séparément des frais d’inscription.</p></td></tr></table></body></html>'
+    '</p><hr style="border:0;border-top:1px solid #bdc8bc"><p style="font-size:12px;line-height:1.5">' +
+    footer +
+    '</p></td></tr></table></body></html>'
   );
 }

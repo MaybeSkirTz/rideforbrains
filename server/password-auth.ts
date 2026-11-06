@@ -6,6 +6,7 @@ import { uuid, now, isLocal } from './types';
 import { digest, opaqueToken } from './crypto';
 import { email } from './validation';
 import { safeReturnUrl } from '../shared/navigation';
+import { localeFromHeader, type Locale } from '../shared/locale';
 import { mailStatement, processMail } from './mail';
 import { countEvent } from './analytics';
 
@@ -53,18 +54,36 @@ async function credential(env: Env, userId: string) {
 }
 const version = async (env: Env, userId: string) =>
   digest((await credential(env, userId))?.password || 'no-password');
-function codeMail(env: Env, address: string, id: string, value: string, purpose: string) {
+function codeMail(
+  env: Env,
+  address: string,
+  id: string,
+  value: string,
+  purpose: string,
+  locale: Locale,
+) {
+  const english = locale === 'en-CA';
   const title =
-    purpose === 'password' ? 'Code pour votre mot de passe' : 'Votre code Ride For Brains';
+    purpose === 'password'
+      ? english
+        ? 'Your password verification code'
+        : 'Code pour votre mot de passe'
+      : english
+        ? 'Your Ride For Brains code'
+        : 'Votre code Ride For Brains';
   return mailStatement(
     env,
     address,
     title,
-    `Votre code de vérification : ${value}\n\nSaisissez ces 6 chiffres sur la page Ride For Brains déjà ouverte. Ce code est valable 10 minutes et ne peut être utilisé qu’une fois.\n\nSi vous n’avez pas fait cette demande, ignorez ce message. Ne communiquez ce code à personne.`,
+    english
+      ? `Your verification code: ${value}\n\nEnter these six digits on the Ride For Brains page you already have open. This code expires in 10 minutes and can only be used once.\n\nIf you did not request this code, ignore this message. Keep your code private.`
+      : `Votre code de vérification : ${value}\n\nSaisissez ces 6 chiffres sur la page Ride For Brains déjà ouverte. Ce code est valable 10 minutes et ne peut être utilisé qu’une fois.\n\nSi vous n’avez pas fait cette demande, ignorez ce message. Ne communiquez ce code à personne.`,
     'auth-code:' + id + ':' + uuid(),
     null,
     null,
     'login',
+    now(),
+    locale,
   );
 }
 export async function authenticatedSession(c: any) {
@@ -170,7 +189,14 @@ export function passwordAuthRoutes(app: any, { fail, limited, botCheck }: any) {
           x.rememberMe ? 1 : 0,
           now() + 600,
         ),
-        codeMail(c.env, user.email, id, value, intent),
+        codeMail(
+          c.env,
+          user.email,
+          id,
+          value,
+          intent,
+          localeFromHeader(c.req.header('X-RFB-Locale')),
+        ),
       ]);
       c.executionCtx.waitUntil(processMail(c.env));
     }
@@ -210,7 +236,14 @@ export function passwordAuthRoutes(app: any, { fail, limited, botCheck }: any) {
       )
         .bind(ch.email)
         .run();
-      await codeMail(c.env, ch.email, ch.id, value, ch.purpose).run();
+      await codeMail(
+        c.env,
+        ch.email,
+        ch.id,
+        value,
+        ch.purpose,
+        localeFromHeader(c.req.header('X-RFB-Locale')),
+      ).run();
       c.executionCtx.waitUntil(processMail(c.env));
     }
     return c.json({ status: true, resendAfter: 60 });

@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { Page, Button, Notice, Link } from './ui';
@@ -17,19 +18,22 @@ export default function ConfirmParticipantEmail() {
   }, [token]);
   return (
     <Page
-      title="Confirmer mon adresse courriel"
-      intro="Cette confirmation concerne uniquement l’adresse de contact de votre participation. Votre compte reste inchangé."
+      title={textForLocale('Confirmer mon adresse courriel')}
+      intro={textForLocale(
+        'Cette confirmation concerne uniquement l’adresse de contact de votre participation. Votre compte reste inchangé.',
+      )}
     >
       {message ? (
         <>
           <Notice>{message}</Notice>
-          <Link to="/infos">Préparer ma participation</Link>
+          <Link to="/infos">{textForLocale('Préparer ma participation')}</Link>
         </>
       ) : (
         <>
           <p>
-            Après confirmation, un nouveau billet sera envoyé à cette adresse. Le précédent billet
-            sera remplacé.
+            {textForLocale(
+              'Après confirmation, un nouveau billet sera envoyé à cette adresse. Le précédent billet sera remplacé.',
+            )}
           </p>
           {error && <Notice error>{error}</Notice>}
           <Button
@@ -50,7 +54,7 @@ export default function ConfirmParticipantEmail() {
               }
             }}
           >
-            Confirmer cette adresse
+            {textForLocale('Confirmer cette adresse')}
           </Button>
         </>
       )}

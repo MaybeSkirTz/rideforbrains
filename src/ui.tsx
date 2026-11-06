@@ -1,4 +1,6 @@
+import { t as textForLocale } from './locale-copy';
 import React from 'react';
+import { currentLocale, localizedPath } from '../shared/locale';
 import {
   ADMIN_ACCESS_MESSAGE,
   ADMIN_ACCESS_URL,
@@ -6,6 +8,7 @@ import {
   STAFF_REAUTH_MESSAGE,
 } from '../shared/admin-access';
 export function go(path: string) {
+  if (currentLocale() === 'en-CA') path = localizedPath(path, 'en-CA');
   if (requiresDocumentNavigation(path)) {
     location.assign(path);
     return;
@@ -15,6 +18,7 @@ export function go(path: string) {
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 export function Link({ to, children, className = '', ...rest }: any) {
+  if (currentLocale() === 'en-CA') to = localizedPath(to, 'en-CA');
   return (
     <a
       href={to}
@@ -76,7 +80,7 @@ export function Button({ children, busy = false, className = '', ...props }: any
       disabled={busy || props.disabled}
       aria-busy={busy}
     >
-      {busy ? 'Un instant…' : children}
+      {busy ? textForLocale('Un instant…') : children}
     </button>
   );
 }
@@ -107,20 +111,22 @@ export function DynamicFields({ fields, answers, onChange }: any) {
                 checked={!!answers[f.id]}
                 onChange={(e) => onChange({ ...answers, [f.id]: e.target.checked })}
               />
-              {f.label}
+              {textForLocale(f.label)}
               {f.required ? ' *' : ''}
             </label>
           ) : (
-            <Field key={f.id} label={f.label + (f.required ? ' *' : '')}>
+            <Field key={f.id} label={textForLocale(f.label) + (f.required ? ' *' : '')}>
               {f.type === 'select' ? (
                 <select
                   required={f.required}
                   value={answers[f.id] || ''}
                   onChange={(e) => onChange({ ...answers, [f.id]: e.target.value })}
                 >
-                  <option value="">Choisir une réponse</option>
+                  <option value="">{textForLocale('Choisir une réponse')}</option>
                   {f.options?.map((o: string) => (
-                    <option key={o}>{o}</option>
+                    <option key={o} value={o}>
+                      {textForLocale(o)}
+                    </option>
                   ))}
                 </select>
               ) : (

@@ -1,10 +1,15 @@
 import { z } from 'zod';
+import { legalForVersion, localizedPath } from '../shared/locale';
 import type { Env } from './types';
 import { uuid, now, parse, json, isLocal } from './types';
 import { digest } from './crypto';
 import { participantSchema, validateAnswers } from './validation';
 import { mailStatement, processMail } from './mail';
-import { guardianConsentText, guardianConsentVersion } from '../shared/participation';
+import {
+  englishGuardianConsentText,
+  guardianConsentText,
+  guardianConsentVersion,
+} from '../shared/participation';
 export async function guardianFingerprint(participant: any, termsVersion: string, childId: string) {
   const { guardianRequestId, guardianStatus, publicListing, ...p } = participant;
   return digest(
@@ -40,6 +45,10 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
     activity: parse(r.activity_snapshot),
     termsVersion: r.terms_version,
     terms: r.terms_snapshot,
+    consentText:
+      parse(r.activity_snapshot)?.locale === 'en-CA'
+        ? englishGuardianConsentText
+        : guardianConsentText,
     status: !r.used_order_id && r.expires_at <= now() ? 'cancelled' : r.status,
     expiresAt: r.expires_at,
     used: !!r.used_order_id,
@@ -55,11 +64,12 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
         .parse(await c.req.json()),
       p = x.participant;
     const s = await settings(c.env);
+    const legal = legalForVersion(s, x.termsVersion);
     if (p.adult || !p.guardianEmail)
       fail(400, 'Indiquez le courriel du parent pour ce participant mineur.');
     if (p.guardianEmail === a.email)
       fail(400, 'Le parent doit utiliser un compte distinct de celui du participant.');
-    if (x.termsVersion !== s.termsVersion)
+    if (!legal)
       fail(409, 'Les conditions ont changé. Relisez-les avant de demander l’autorisation.');
     if (!isLocal(c.env) && (!c.env.RESEND_API_KEY || !c.env.MAIL_FROM))
       fail(503, 'Le service de courriel doit être configuré pour prévenir le parent.');
@@ -74,11 +84,11 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
     if (p.formVersion !== activity.form_version)
       fail(409, 'Le formulaire a changé. Rechargez la page.');
     validateAnswers(parse(activity.fields, []), p.answers);
-    const fingerprint = await guardianFingerprint(p, s.termsVersion, a.id);
+    const fingerprint = await guardianFingerprint(p, x.termsVersion, a.id);
     const existing = await c.env.DB.prepare(
       "SELECT * FROM guardian_requests WHERE child_user_id=? AND fingerprint=? AND terms_version=? AND json_extract(activity_snapshot,'$.eventAt')=? AND expires_at>? AND used_order_id IS NULL AND status IN ('pending','approved') ORDER BY created_at DESC LIMIT 1",
     )
-      .bind(a.id, fingerprint, s.termsVersion, s.eventAt, now())
+      .bind(a.id, fingerprint, x.termsVersion, s.eventAt, now())
       .first();
     if (existing) return c.json(present(existing));
     await limited(c.env, 'guardian-request:' + a.id, 5, 3600);
@@ -95,14 +105,15 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
         p.activityId,
         json(p),
         fingerprint,
-        s.termsVersion,
-        s.terms,
+        x.termsVersion,
+        legal!.terms,
         json({
           name: activity.name,
           distance: activity.distance,
           sport: activity.sport,
           eventAt: s.eventAt,
           formVersion: activity.form_version,
+          locale: legal!.locale,
           fields: parse(activity.fields, []),
         }),
         expires,
@@ -110,12 +121,18 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
       mailStatement(
         c.env,
         p.guardianEmail!,
-        'Autorisation parentale demandée — Ride For Brains',
-        `${p.firstName} ${p.lastName} souhaite participer à ${activity.name} (${activity.distance}).\n\nConnectez-vous à votre propre compte Ride For Brains pour examiner les renseignements, les conditions et les choix de consentement, puis autoriser ou refuser cette participation :\n${c.env.APP_URL}/autorisations-parentales\n\nSi vous n’avez pas de compte, créez-en un avec cette adresse courriel. La connexion utilise votre mot de passe et un code à 6 chiffres. Aucun paiement ni billet n’est créé avant autorisation. Si cette demande ne vous concerne pas, ne l’autorisez pas.`,
+        legal!.locale === 'en-CA'
+          ? 'Parental authorization requested — Ride For Brains'
+          : 'Autorisation parentale demandée — Ride For Brains',
+        legal!.locale === 'en-CA'
+          ? `${p.firstName} ${p.lastName} would like to take part in ${activity.name} (${activity.distance}).\n\nSign in to your own account to review and approve or decline the request:\n${c.env.APP_URL}${localizedPath('/autorisations-parentales', legal!.locale)}\n\nUse this email address when creating your account. Please ignore the request if it does not concern you.`
+          : `${p.firstName} ${p.lastName} souhaite participer à ${activity.name} (${activity.distance}).\n\nConnectez-vous à votre propre compte Ride For Brains pour examiner les renseignements, les conditions et les choix de consentement, puis autoriser ou refuser cette participation :\n${c.env.APP_URL}/autorisations-parentales\n\nSi vous n’avez pas de compte, créez-en un avec cette adresse courriel. La connexion utilise votre mot de passe et un code à 6 chiffres. Aucun paiement ni billet n’est créé avant autorisation. Si cette demande ne vous concerne pas, ne l’autorisez pas.`,
         'guardian-request:' + id,
         null,
         null,
         'guardian',
+        now(),
+        legal!.locale,
       ),
       audit(c.env, a.id, 'guardian.requested', id),
     ]);
@@ -177,7 +194,7 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
         .bind(r.activity_id)
         .first();
     if (
-      r.terms_version !== s.termsVersion ||
+      !legalForVersion(s, r.terms_version) ||
       parse(r.activity_snapshot).eventAt !== s.eventAt ||
       !activity ||
       activity.sport === 'velo' ||
@@ -185,12 +202,17 @@ export function guardianRoutes(app: any, { actor, settings, audit, fail, limited
     )
       fail(409, 'L’activité ou les conditions ont changé. Le participant doit refaire sa demande.');
     const status = x.decision === 'approve' ? 'approved' : 'declined';
+    const english = parse(r.activity_snapshot)?.locale === 'en-CA';
     const consent = {
       version: guardianConsentVersion,
       text:
         x.decision === 'approve'
-          ? guardianConsentText
-          : 'Je refuse cette participation après examen de la demande.',
+          ? english
+            ? englishGuardianConsentText
+            : guardianConsentText
+          : english
+            ? 'I decline this participation after reviewing the request.'
+            : 'Je refuse cette participation après examen de la demande.',
       parentUserId: a.id,
       parentEmail: a.email,
       signature: x.signature,

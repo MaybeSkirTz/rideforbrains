@@ -6,6 +6,11 @@ import SubmissionDetails from './SubmissionDetails';
 import EmailCorrection from './EmailCorrection';
 import LaunchReview from './LaunchReview';
 import ContentEditor, { PhotoEditor } from './ContentEditor';
+import { dayJTextFields } from '../shared/day-j';
+import ImportantNotices from './ImportantNotices';
+import CommunityAdmin from './CommunityAdmin';
+import ImpactSettings from './ImpactSettings';
+import EnglishSettings from './EnglishSettings';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
@@ -78,6 +83,7 @@ export default function Admin() {
     ['settings', 'Événement', Settings2, 'event'],
     ['forms', 'Formulaires', ListChecks, 'event'],
     ['mail', 'Communications', Mail, 'communications'],
+    ['community', 'Communauté', Users, 'community'],
     ['checkin', 'Accueil / QR', ScanLine, 'checkin'],
     ['submissions', 'Demandes reçues', Inbox, 'submissions'],
     ['staff', 'Équipe et accès', ShieldCheck, 'staff'],
@@ -146,6 +152,8 @@ export default function Admin() {
             <Forms {...feedback} />
           ) : active === 'mail' ? (
             <Communications {...feedback} selected={selected} />
+          ) : active === 'community' ? (
+            <CommunityAdmin />
           ) : active === 'checkin' ? (
             <Checkin {...feedback} canUndo={has('participants')} />
           ) : active === 'submissions' ? (
@@ -489,6 +497,30 @@ function Participants(
             {detail.email} · commande {detail.order_id}
           </p>
           <span className={'status ' + detail.status}>{statuses[detail.status]}</span>
+          {canRemove && detail.order && (
+            <Button
+              type="button"
+              className="light"
+              onClick={async () => {
+                try {
+                  const test = !detail.order.is_test;
+                  await api('/admin/impact/test-order', { orderId: detail.order_id, test }, 'PUT');
+                  setMessage(
+                    test
+                      ? 'Commande de test exclue des compteurs publics.'
+                      : 'Commande réintégrée aux compteurs publics si admissible.',
+                  );
+                  await open(detail.id);
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              {detail.order.is_test
+                ? 'Retirer le marqueur de test'
+                : 'Marquer la commande comme test'}
+            </Button>
+          )}
           <EmailCorrection key={detail.id} id={detail.id} current={detail.email} />
           <form onSubmit={save} className="admin-section">
             <div className="form-grid">
@@ -813,6 +845,23 @@ function Settings({ setError, setMessage }: Feedback) {
           />
         </details>
         <details className="settings-details">
+          <summary>Mon jour J</summary>
+          {Object.entries({ state: 'État de l’événement', ...dayJTextFields }).map(
+            ([key, label]) => (
+              <Field key={key} label={label}>
+                <textarea
+                  rows={key === 'state' ? 2 : 3}
+                  maxLength={key === 'state' ? 160 : key === 'instructions' ? 4000 : 2500}
+                  value={s.dayJ?.[key] || ''}
+                  onChange={(e) => change('dayJ', { ...s.dayJ, [key]: e.target.value })}
+                />
+              </Field>
+            ),
+          )}
+        </details>
+        <ImpactSettings settings={s} change={change} />
+        <EnglishSettings settings={s} activities={config.activities} change={change} />
+        <details className="settings-details">
           <summary>Conditions, confidentialité et validations</summary>
           <LaunchReview settings={s} change={change} />
           <Field label="Version des conditions (à changer pour chaque modification)">
@@ -906,9 +955,90 @@ function Settings({ setError, setMessage }: Feedback) {
         ))}
       </section>
       <Promos config={config} reload={load} setError={setError} setMessage={setMessage} />
+      <ReferralReport />
+      <WalletStatus />
     </>
   );
 }
+function WalletStatus() {
+  const [status, setStatus] = useState<any>();
+  const [error, setError] = useState('');
+  return (
+    <details
+      className="settings-details"
+      onToggle={(e) => {
+        if (e.currentTarget.open)
+          api('/admin/wallet/status')
+            .then(setStatus)
+            .catch((err) => setError(err.message));
+      }}
+    >
+      <summary>Configuration Wallet</summary>
+      {error && <Notice error>{error}</Notice>}
+      {status && (
+        <ul>
+          <li>Apple Wallet · {status.apple ? 'Signature configurée' : 'Désactivé'}</li>
+          <li>Google Wallet · {status.google ? 'Émetteur configuré' : 'Désactivé'}</li>
+          {status.counts.map((row: any) => (
+            <li key={row.provider}>
+              {row.provider} · {row.issued} génération(s), {row.revoked} révocation(s)
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  );
+}
+
+function ReferralReport() {
+  const [report, setReport] =
+    useState<{ code: string; name: string; visits: number; registrations: number }[]>();
+  const [error, setError] = useState('');
+  const refresh = () => {
+    setError('');
+    api('/admin/referrals')
+      .then(setReport)
+      .catch((e) => setError(e.message));
+  };
+  return (
+    <details
+      className="settings-details"
+      onToggle={(e) => {
+        if (e.currentTarget.open && !report) refresh();
+      }}
+    >
+      <summary>Invitations et provenance</summary>
+      {error && <Notice error>{error}</Notice>}
+      {report && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Compte</th>
+                <th>Visites invitées</th>
+                <th>Participations attribuées</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.map((row) => (
+                <tr key={row.code}>
+                  <td>{row.name}</td>
+                  <td>{row.visits}</td>
+                  <td>{row.registrations}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!report.length && <p>Aucune invitation créée.</p>}
+        </div>
+      )}
+      <button type="button" className="text-link" onClick={refresh}>
+        Actualiser
+      </button>
+    </details>
+  );
+}
+
 function DateTimeField({ label, value, change }: any) {
   const local = value
     ? new Date(value * 1000 - new Date(value * 1000).getTimezoneOffset() * 60000)
@@ -1031,6 +1161,7 @@ function ActivityEditor({ activity, saved, setError }: any) {
         </Field>
         <div className="form-grid">
           {[
+            ['arrival', 'Arrivée recommandée pour cette activité'],
             ['departure', 'Heure de départ confirmée'],
             ['elevationGain', 'Dénivelé positif confirmé (m)'],
             ['startLabel', 'Point de départ'],
@@ -1038,7 +1169,13 @@ function ActivityEditor({ activity, saved, setError }: any) {
           ].map(([key, label]) => (
             <Field key={key} label={label}>
               <input
-                type={key === 'departure' ? 'time' : key === 'elevationGain' ? 'number' : 'text'}
+                type={
+                  key === 'departure' || key === 'arrival'
+                    ? 'time'
+                    : key === 'elevationGain'
+                      ? 'number'
+                      : 'text'
+                }
                 min={key === 'elevationGain' ? 0 : undefined}
                 value={a.route[key] ?? ''}
                 onChange={(e) => {
@@ -1478,6 +1615,7 @@ function Communications({ setError, setMessage, selected }: Feedback & { selecte
   return (
     <>
       <h2>Des nouvelles de l’organisation.</h2>
+      <ImportantNotices selected={selected} />
       <p className="small">
         Les messages opérationnels servent à gérer l’événement. Les messages promotionnels sont
         réservés aux personnes ayant consenti et incluent un désabonnement.
@@ -2149,6 +2287,7 @@ function Staff({ setError, setMessage }: Feedback) {
             ['refunds', 'Demander des remboursements'],
             ['event', 'Modifier l’événement et les formulaires'],
             ['communications', 'Envoyer des communications'],
+            ['community', 'Modérer la communauté'],
             ['checkin', 'Valider les billets'],
             ['submissions', 'Traiter les demandes reçues'],
           ].map(([key, label]) => (

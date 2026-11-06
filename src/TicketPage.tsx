@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react';
+import { t as textForLocale } from './locale-copy';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { api } from './api';
 import { useApp } from './context';
 import { Page, Link, Notice, Button } from './ui';
 import { accountUrl } from '../shared/navigation';
 import { googleCalendarUrl, calendarICS } from '../shared/event';
+import { currentLocale } from '../shared/locale';
 import useFragmentToken from './useFragmentToken';
+const WalletButtons = lazy(() => import('./WalletButtons'));
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
 export default function TicketPage({ id, personal = false }: { id: string; personal?: boolean }) {
-  const { user } = useApp();
+  const { user, data } = useApp();
   const fragment = useFragmentToken(),
     token = personal ? fragment : '';
   const [ticket, setTicket] = useState<any>(),
@@ -48,37 +51,37 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
   }, [id, user, personal, token]);
   if (!personal && !user)
     return (
-      <Page title="Votre billet personnel.">
+      <Page title={textForLocale('Votre billet personnel.')}>
         <Link className="button" to={accountUrl('/billet/' + id)}>
-          Me connecter pour voir le billet
+          {textForLocale('Me connecter pour voir le billet')}
         </Link>
       </Page>
     );
   if (error)
     return (
-      <Page title="Billet indisponible.">
+      <Page title={textForLocale('Billet indisponible.')}>
         <Notice error>{error}</Notice>
-        <Link to="/espace">Revenir à mon espace</Link>
+        <Link to="/espace">{textForLocale('Revenir à mon espace')}</Link>
       </Page>
     );
   if (!ticket)
     return (
-      <Page title="Votre billet.">
-        <p role="status">Chargement…</p>
+      <Page title={textForLocale('Votre billet.')}>
+        <p role="status">{textForLocale('Chargement…')}</p>
       </Page>
     );
   const event = ticket.event || {},
     date = event.eventAt
-      ? new Date(event.eventAt).toLocaleDateString('fr-CA', {
+      ? new Date(event.eventAt).toLocaleDateString(currentLocale(), {
           dateStyle: 'long',
           timeZone: 'America/Toronto',
         })
-      : 'Date à confirmer';
+      : textForLocale('Date à confirmer');
   const download = async () => {
     setDownloading(true);
     setDownloadError('');
     const qr = ticket.svg.replace('<svg ', '<svg x="150" y="235" width="400" height="400" ');
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="850" viewBox="0 0 700 850"><rect width="700" height="850" fill="#f6f5ed"/><g fill="#12312f" font-family="Arial,sans-serif" text-anchor="middle"><text x="350" y="65" font-size="30" font-weight="bold">RIDE FOR BRAINS</text><text x="350" y="105" font-size="20">${esc(date)}</text><text x="350" y="157" font-size="26">${esc(ticket.name)} · ${esc(ticket.distance)}</text><text x="350" y="200" font-size="22">${esc(ticket.first_name)} ${esc(ticket.last_name)}</text>${qr}<text x="350" y="690" font-size="18">Accueil ${esc(event.reception || 'à confirmer')}</text><text x="350" y="727" font-size="16">Billet personnel · ${esc(ticket.id.slice(0, 8))}</text><text x="350" y="765" font-size="14">Présenter ce code à l’accueil. Ne pas le partager.</text></g></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="700" height="850" viewBox="0 0 700 850"><rect width="700" height="850" fill="#f6f5ed"/><g fill="#12312f" font-family="Arial,sans-serif" text-anchor="middle"><text x="350" y="65" font-size="30" font-weight="bold">RIDE FOR BRAINS</text><text x="350" y="105" font-size="20">${esc(date)}</text><text x="350" y="157" font-size="26">${esc(ticket.name)} · ${esc(ticket.distance)}</text><text x="350" y="200" font-size="22">${esc(ticket.first_name)} ${esc(ticket.last_name)}</text>${qr}<text x="350" y="690" font-size="18">${esc(textForLocale('Accueil'))} ${esc(event.reception || textForLocale('à confirmer'))}</text><text x="350" y="727" font-size="16">${esc(textForLocale('Billet personnel'))} · ${esc(ticket.id.slice(0, 8))}</text><text x="350" y="765" font-size="14">${esc(textForLocale('Présenter ce code à l’accueil. Ne pas le partager.'))}</text></g></svg>`;
     const artworkUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     try {
       const artwork = new Image();
@@ -103,7 +106,9 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch {
       setDownloadError(
-        'Le téléchargement du billet a échoué. Utilisez « Imprimer / enregistrer en PDF ».',
+        textForLocale(
+          'Le téléchargement du billet a échoué. Utilisez « Imprimer / enregistrer en PDF ».',
+        ),
       );
     } finally {
       URL.revokeObjectURL(artworkUrl);
@@ -123,7 +128,10 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return (
-    <Page eyebrow="VOTRE RENDEZ-VOUS" title="Prêt pour le départ.">
+    <Page
+      eyebrow={textForLocale('VOTRE RENDEZ-VOUS')}
+      title={textForLocale('Prêt pour le départ.')}
+    >
       <article className="full-ticket">
         <div className="ticket-brand">
           <img src="/assets/ride-for-brains.png" width="84" height="84" alt="Ride For Brains" />
@@ -139,38 +147,48 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
         <p className="ticket-name">
           {ticket.first_name} {ticket.last_name}
         </p>
-        <p className="status confirmed">Inscription confirmée</p>
+        <p className="status confirmed">{textForLocale('Inscription confirmée')}</p>
         <img
           className="ticket-qr"
           src={ticket.image}
           width="300"
           height="300"
-          alt="Billet personnel : présentez ce code QR à l’accueil"
+          alt={textForLocale('Billet personnel : présentez ce code QR à l’accueil')}
         />
         <dl>
           <div>
-            <dt>Accueil</dt>
-            <dd>{event.reception?.replace(':', ' h ') || 'À confirmer'}</dd>
+            <dt>{textForLocale('Accueil')}</dt>
+            <dd>{event.reception?.replace(':', ' h ') || textForLocale('À confirmer')}</dd>
           </div>
           <div>
-            <dt>Lieu</dt>
-            <dd>{event.location || 'À confirmer'}</dd>
+            <dt>{textForLocale('Lieu')}</dt>
+            <dd>{event.location || textForLocale('À confirmer')}</dd>
           </div>
           <div>
-            <dt>Numéro</dt>
+            <dt>{textForLocale('Numéro')}</dt>
             <dd>{ticket.id.slice(0, 8)}</dd>
           </div>
         </dl>
         <p className="small">
-          Billet personnel. Conservez-le sur votre téléphone et évitez de partager son code.
+          {textForLocale(
+            'Billet personnel. Conservez-le sur votre téléphone et évitez de partager son code.',
+          )}
         </p>
         {downloadError && <Notice error>{downloadError}</Notice>}
+        {(data.services.wallet?.apple || data.services.wallet?.google) && (
+          <Suspense fallback={null}>
+            <WalletButtons
+              available={data.services.wallet}
+              proof={personal ? { token } : { registrationId: ticket.id }}
+            />
+          </Suspense>
+        )}
         <div className="actions ticket-actions">
           <Button onClick={download} busy={downloading}>
-            Télécharger mon billet
+            {textForLocale('Télécharger mon billet')}
           </Button>
           <Button className="button light" onClick={() => window.print()}>
-            Imprimer / enregistrer en PDF
+            {textForLocale('Imprimer / enregistrer en PDF')}
           </Button>
           {event.eventAt && (
             <a
@@ -179,14 +197,14 @@ export default function TicketPage({ id, personal = false }: { id: string; perso
               target="_blank"
               rel="noopener noreferrer"
             >
-              Ajouter au calendrier
+              {textForLocale('Ajouter au calendrier')}
             </a>
           )}
           <button className="text-link" onClick={downloadCalendar}>
-            Calendrier (.ics)
+            {textForLocale('Calendrier (.ics)')}
           </button>
           <Link className="text-link" to="/espace">
-            Mon espace
+            {textForLocale('Mon espace')}
           </Link>
         </div>
       </article>

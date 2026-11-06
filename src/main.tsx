@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import MotionToggle from './MotionToggle';
 import DevAudit from './DevAudit';
 import React, {
@@ -41,6 +42,7 @@ import { api, downloadPrivate, money, statuses, date } from './api';
 import { Context, useApp, type Data } from './context';
 import { go, Link, Notice, Field, Button, Page, DynamicFields } from './ui';
 import { accountUrl } from '../shared/navigation';
+import { currentLocale, frenchPath, localizedPath } from '../shared/locale';
 import { donationNotice, donationDestination } from '../shared/event';
 import { editorial } from '../shared/editorial';
 import Account from './Account';
@@ -62,7 +64,7 @@ import { track } from './tracking';
 import CheckoutStatus from './CheckoutStatus';
 import ConfirmParticipantEmail from './ConfirmParticipantEmail';
 const eventDate = (s: any) =>
-  new Date(s.eventAt).toLocaleDateString('fr-CA', {
+  new Date(s.eventAt).toLocaleDateString(currentLocale(), {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -74,18 +76,26 @@ import './experience.css';
 const TicketPage = lazy(() => import('./TicketPage'));
 const ReceiptPage = lazy(() => import('./ReceiptPage'));
 const Admin = lazy(() => import('./Admin'));
+const DayJ = lazy(() => import('./DayJ'));
+const Community = lazy(() => import('./Community'));
+const Transparency = lazy(() => import('./Impact'));
+const PublicImpact = lazy(() =>
+  import('./Impact').then((module) => ({ default: module.PublicImpact })),
+);
+const Finisher = lazy(() => import('./Finisher'));
 function App() {
   const [data, setData] = useState<Data | null>(null),
     [user, setUser] = useState<any>(null),
     [error, setError] = useState(''),
     [url, setUrl] = useState(location.pathname + location.search);
-  const path = url.split('?')[0];
+  const path = frenchPath(url.split('?')[0]);
   const refresh = async () => {
     const [d, u] = await Promise.all([api('/public'), api('/me')]);
     setData(d);
     setUser(u.user);
   };
   useEffect(() => {
+    document.documentElement.lang = currentLocale();
     refresh().catch((e) => setError(e.message));
     const nav = () => setUrl(location.pathname + location.search);
     addEventListener('popstate', nav);
@@ -94,16 +104,23 @@ function App() {
   useEffect(() => {
     const name: Record<string, string> = {
       '/inscription': 'Inscription',
-      '/espace': 'Mon espace',
+      '/espace': textForLocale('Mon espace'),
+      '/mon-jour-j': textForLocale('Mon jour J'),
+      '/equipes': textForLocale('Les équipes'),
+      '/histoires': textForLocale('Pourquoi je participe'),
+      '/pour-eux': textForLocale('Pour eux'),
+      '/ma-communaute': textForLocale('Ma communauté'),
+      '/impact': textForLocale('Notre impact'),
+      '/ou-va-mon-argent': textForLocale('Où va mon argent?'),
       '/connexion': 'Connexion',
       '/admin': 'Administration',
-      '/organisation': 'Espace équipe',
-      '/participants': 'Les participants',
-      '/autorisations-parentales': 'Autorisations parentales',
-      '/activites': 'Les activités',
-      '/infos': 'Infos pratiques',
-      '/cause': 'La cause',
-      '/equipe': 'Notre histoire',
+      '/organisation': textForLocale('Espace équipe'),
+      '/participants': textForLocale('Les participants'),
+      '/autorisations-parentales': textForLocale('Autorisations parentales'),
+      '/activites': textForLocale('Les activités'),
+      '/infos': textForLocale('Infos pratiques'),
+      '/cause': textForLocale('La cause'),
+      '/equipe': textForLocale('Notre histoire'),
     };
     const selected = data?.activities.find((a) => path === '/activites/' + a.id);
     document.title =
@@ -123,14 +140,14 @@ function App() {
       <div className="loading">
         <h1>Ride For Brains</h1>
         <Notice error>{error}</Notice>
-        <Button onClick={() => location.reload()}>Réessayer</Button>
+        <Button onClick={() => location.reload()}>{textForLocale('Réessayer')}</Button>
       </div>
     );
   if (!data)
     return (
       <div className="loading">
         <img src="/assets/ride-for-brains.png" alt="Ride For Brains" width="120" />
-        <p>Chaque kilomètre commence ici…</p>
+        <p>{textForLocale('Chaque kilomètre commence ici…')}</p>
       </div>
     );
   let page;
@@ -146,21 +163,48 @@ function App() {
   else if (path === '/confirmer-courriel') page = <ConfirmParticipantEmail />;
   else if (path.startsWith('/recu/'))
     page = (
-      <Suspense fallback={<p>Chargement du reçu…</p>}>
+      <Suspense fallback={<p>{textForLocale('Chargement du reçu…')}</p>}>
         <ReceiptPage id={path.slice(6)} />
       </Suspense>
     );
   else if (path.startsWith('/billet/') || path === '/billet-personnel')
     page = (
-      <Suspense fallback={<p>Chargement du billet…</p>}>
+      <Suspense fallback={<p>{textForLocale('Chargement du billet…')}</p>}>
         <TicketPage id={path.slice(8)} personal={path === '/billet-personnel'} />
       </Suspense>
     );
   else if (path === '/espace') page = <Participant />;
+  else if (path === '/mon-jour-j')
+    page = (
+      <Suspense fallback={<p>{textForLocale('Chargement…')}</p>}>
+        <DayJ key={url} />
+      </Suspense>
+    );
+  else if (
+    ['/equipes', '/histoires', '/pour-eux', '/ma-communaute'].includes(path) ||
+    path.startsWith('/equipes/')
+  )
+    page = (
+      <Suspense fallback={<p>{textForLocale('Chargement…')}</p>}>
+        <Community path={path} key={path} />
+      </Suspense>
+    );
+  else if (path === '/impact' || path === '/ou-va-mon-argent')
+    page = (
+      <Suspense fallback={<p>{textForLocale('Chargement…')}</p>}>
+        {path === '/impact' ? <PublicImpact /> : <Transparency />}
+      </Suspense>
+    );
+  else if (path.startsWith('/souvenir/'))
+    page = (
+      <Suspense fallback={<p>{textForLocale('Chargement…')}</p>}>
+        <Finisher key={path} id={path.slice('/souvenir/'.length)} />
+      </Suspense>
+    );
   else if (path === '/participants') page = <PublicParticipants key={url} />;
   else if (path === '/organisation' || path.startsWith('/admin'))
     page = (
-      <Suspense fallback={<p>Chargement de l’administration…</p>}>
+      <Suspense fallback={<p>{textForLocale('Chargement de l’administration…')}</p>}>
         <Admin />
       </Suspense>
     );
@@ -186,9 +230,13 @@ function App() {
   else if (path === '/desabonnement') page = <Unsubscribe />;
   else
     page = (
-      <Page eyebrow="Hors parcours" title="Cette page n’existe pas.">
+      <Page
+        eyebrow={textForLocale('Hors parcours')}
+        title={textForLocale('Cette page n’existe pas.')}
+      >
         <Link to="/" className="button">
-          Revenir à l’accueil <ArrowRight size={18} />
+          {textForLocale('Revenir à l’accueil ')}
+          <ArrowRight size={18} />
         </Link>
       </Page>
     );
@@ -204,7 +252,7 @@ function App() {
           main?.scrollIntoView({ behavior: 'auto' });
         }}
       >
-        Aller au contenu
+        {textForLocale('Aller au contenu')}
       </a>
       <Header path={path} />
       <main id="main" tabIndex={-1}>
@@ -232,7 +280,7 @@ function Header({ path }: any) {
   const registrationActivity = currentActivity || (sport ? relevantActivities[0] : null);
   const pricing = activityPricing(relevantActivities);
   const publicPage =
-    !/^\/(inscription|attente|connexion|compte|espace|admin|organisation|billet|billet-personnel|recu|confirmer-courriel|autorisations-parentales|courriels-locaux)(\/|$)/.test(
+    !/^\/(inscription|attente|connexion|compte|espace|mon-jour-j|ma-communaute|souvenir|admin|organisation|billet|billet-personnel|recu|confirmer-courriel|autorisations-parentales|courriels-locaux)(\/|$)/.test(
       path,
     );
   useEffect(() => {
@@ -257,11 +305,12 @@ function Header({ path }: any) {
       {data.environment !== 'production' && (
         <div className="dev-banner">
           {data.environment === 'development'
-            ? 'Aperçu local · aucun paiement réel'
-            : 'Mode test · aucun paiement réel'}
+            ? textForLocale('Aperçu local · aucun paiement réel')
+            : textForLocale('Mode test · aucun paiement réel')}
           {data.environment === 'development' && (
             <Link to="/courriels-locaux">
-              Boîte de courriels locale <ArrowUpRight size={12} />
+              {textForLocale('Boîte de courriels locale ')}
+              <ArrowUpRight size={12} />
             </Link>
           )}
         </div>
@@ -276,7 +325,7 @@ function Header({ path }: any) {
             }
           }}
         >
-          <Link to="/" className="brand" aria-label="Ride For Brains, accueil">
+          <Link to="/" className="brand" aria-label={textForLocale('Ride For Brains, accueil')}>
             <img src="/assets/ride-for-brains.png" alt="" />
             <span>
               RIDE FOR
@@ -288,7 +337,7 @@ function Header({ path }: any) {
           </Link>
           <nav
             id="primary-nav"
-            aria-label="Navigation principale"
+            aria-label={textForLocale('Navigation principale')}
             className={open ? 'nav open' : 'nav'}
           >
             <Link
@@ -297,22 +346,22 @@ function Header({ path }: any) {
                 /^\/(activites|velo|course|marche)(\/|$)/.test(path) ? 'page' : undefined
               }
             >
-              Les activités
+              {textForLocale('Les activités')}
             </Link>
             <Link to="/participants" aria-current={path === '/participants' ? 'page' : undefined}>
-              Les participants
+              {textForLocale('Les participants')}
             </Link>
             <Link to="/cause" aria-current={path === '/cause' ? 'page' : undefined}>
-              La cause
+              {textForLocale('La cause')}
             </Link>
             <Link
               to="/infos"
               aria-current={['/infos', '/parcours'].includes(path) ? 'page' : undefined}
             >
-              Infos pratiques
+              {textForLocale('Infos pratiques')}
             </Link>
             <Link to="/equipe" aria-current={path === '/equipe' ? 'page' : undefined}>
-              Notre histoire
+              {textForLocale('Notre histoire')}
             </Link>
             <Link
               to={user ? '/espace' : '/connexion'}
@@ -322,18 +371,38 @@ function Header({ path }: any) {
               }
             >
               <UserRound size={17} />
-              Mon espace
+              {textForLocale('Mon espace')}
             </Link>
+            {data.services.english && localizedPath(path, 'en-CA') !== path && (
+              <span className="language-choice" aria-label="Language / Langue">
+                <a
+                  href={localizedPath(path + location.search + location.hash, 'fr-CA')}
+                  lang="fr-CA"
+                  aria-current={currentLocale() === 'fr-CA' ? 'page' : undefined}
+                >
+                  FR
+                </a>
+                <span aria-hidden="true">|</span>
+                <a
+                  href={localizedPath(path + location.search + location.hash, 'en-CA')}
+                  lang="en-CA"
+                  aria-current={currentLocale() === 'en-CA' ? 'page' : undefined}
+                >
+                  EN
+                </a>
+              </span>
+            )}
           </nav>
           <Link to="/inscription" className="button nav-cta">
-            Je participe <ArrowUpRight size={17} />
+            {textForLocale('Je participe ')}
+            <ArrowUpRight size={17} />
           </Link>
           <button
             className="menu-toggle"
             onClick={() => setOpen(!open)}
             aria-expanded={open}
             aria-controls="primary-nav"
-            aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
+            aria-label={open ? textForLocale('Fermer le menu') : textForLocale('Ouvrir le menu')}
           >
             {open ? <X /> : <Menu />}
           </button>
@@ -342,7 +411,7 @@ function Header({ path }: any) {
       <div className="mobile-account-bar">
         <Link to={user ? '/espace' : '/connexion'}>
           <UserRound size={17} />
-          {user ? 'Mon espace' : 'Se connecter / S’inscrire'}
+          {user ? textForLocale('Mon espace') : textForLocale('Se connecter / S’inscrire')}
           <ArrowUpRight size={16} />
         </Link>
       </div>
@@ -353,7 +422,8 @@ function Header({ path }: any) {
             registrationActivity ? '/inscription?activite=' + registrationActivity.id : '/activites'
           }
         >
-          S’inscrire — {activityPriceLabel(relevantActivities)}
+          {textForLocale('S’inscrire — ')}
+          {activityPriceLabel(relevantActivities)}
           <ArrowRight size={18} />
         </Link>
       )}
@@ -367,15 +437,19 @@ function Footer() {
       {location.pathname !== '/' && (
         <div className="footer-top">
           <div>
-            <p className="eyebrow lime-text">ON SE RETROUVE SUR LA LIGNE DE DÉPART.</p>
+            <p className="eyebrow lime-text">
+              {textForLocale('ON SE RETROUVE SUR LA LIGNE DE DÉPART.')}
+            </p>
             <h2>
-              On se retrouve
+              {textForLocale('On se retrouve')}
               <br />
-              au départ<span className="lime-text">.</span>
+              {textForLocale('au départ')}
+              <span className="lime-text">.</span>
             </h2>
           </div>
           <Link to="/inscription" className="button lime">
-            Trouver mon activité <ArrowUpRight size={20} />
+            {textForLocale('Trouver mon activité ')}
+            <ArrowUpRight size={20} />
           </Link>
         </div>
       )}
@@ -384,12 +458,12 @@ function Footer() {
           <Link to="/" className="footer-brand">
             RIDE FOR BRAINS.
           </Link>
-          <p>Pour eux, chaque kilomètre compte.</p>
+          <p>{textForLocale('Pour eux, chaque kilomètre compte.')}</p>
           <span className="small">
             {data.settings.edition} · {eventDate(data.settings)}
           </span>
           {editorial(data.settings).socialLinks.length > 0 && (
-            <nav className="social-links" aria-label="Réseaux sociaux">
+            <nav className="social-links" aria-label={textForLocale('Réseaux sociaux')}>
               {editorial(data.settings).socialLinks.map((s) => (
                 <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer">
                   {s.name}
@@ -399,38 +473,44 @@ function Footer() {
           )}
         </div>
         <div>
-          <b>L’événement</b>
-          <Link to="/activites">Vélo, course et marche</Link>
-          <Link to="/participants">Les participants</Link>
-          <Link to="/infos">Renseignements pratiques</Link>
-          <Link to="/faq">Questions fréquentes</Link>
+          <b>{textForLocale('L’événement')}</b>
+          <Link to="/activites">{textForLocale('Vélo, course et marche')}</Link>
+          <Link to="/participants">{textForLocale('Les participants')}</Link>
+          <Link to="/infos">{textForLocale('Renseignements pratiques')}</Link>
+          <Link to="/faq">{textForLocale('Questions fréquentes')}</Link>
         </div>
         <div>
-          <b>Ensemble</b>
-          <Link to="/benevolat">Devenir bénévole</Link>
-          <Link to="/partenaires">Devenir partenaire</Link>
-          <Link to="/contact">Nous joindre</Link>
+          <b>{textForLocale('Ensemble')}</b>
+          <Link to="/benevolat">{textForLocale('Devenir bénévole')}</Link>
+          <Link to="/partenaires">{textForLocale('Devenir partenaire')}</Link>
+          <Link to="/contact">{textForLocale('Nous joindre')}</Link>
           <a href={'mailto:' + data.settings.contact}>{data.settings.contact}</a>
           <a href={data.settings.donationUrl} target="_blank" rel="noopener noreferrer">
-            Faire un don <ArrowUpRight size={13} />
+            {textForLocale('Faire un don ')}
+            <ArrowUpRight size={13} />
           </a>
         </div>
         <div>
-          <b>Votre espace</b>
-          <Link to="/espace">Mes inscriptions</Link>
-          <Link to="/conditions">Conditions d’inscription</Link>
-          <Link to="/annulation">Annulation et remboursement</Link>
-          <Link to="/confidentialite">Confidentialité</Link>
+          <b>{textForLocale('Votre espace')}</b>
+          <Link to="/espace">{textForLocale('Mes inscriptions')}</Link>
+          <Link to="/conditions">{textForLocale('Conditions d’inscription')}</Link>
+          <Link to="/annulation">{textForLocale('Annulation et remboursement')}</Link>
+          <Link to="/confidentialite">{textForLocale('Confidentialité')}</Link>
+          <Link to="/equipes">{textForLocale('Les équipes')}</Link>
+          <Link to="/histoires">{textForLocale('Histoires de participants')}</Link>
+          <Link to="/pour-eux">{textForLocale('Pour eux')}</Link>
+          <Link to="/impact">{textForLocale('Notre impact')}</Link>
+          <Link to="/ou-va-mon-argent">{textForLocale('Où va mon argent?')}</Link>
           {user && user.role !== 'participant' && (
             <Link to={staffHome(user.role)}>
-              {user.role === 'admin' ? 'Administration' : 'Espace équipe'}
+              {user.role === 'admin' ? 'Administration' : textForLocale('Espace équipe')}
             </Link>
           )}
         </div>
       </div>
       <div className="footer-bottom">
         <span>© {new Date().getFullYear()} Ride For Brains</span>
-        <span>{donationDestination}</span>
+        <span>{textForLocale(donationDestination)}</span>
       </div>
     </footer>
   );
@@ -443,10 +523,10 @@ function Contact({ kind }: any) {
     [token, setToken] = useState('');
   const title =
     kind === 'volunteer'
-      ? 'L’équipe a besoin de votre énergie.'
+      ? textForLocale('L’équipe a besoin de votre énergie.')
       : kind === 'sponsor'
-        ? 'Faisons du chemin ensemble.'
-        : 'On garde le contact.';
+        ? textForLocale('Faisons du chemin ensemble.')
+        : textForLocale('On garde le contact.');
   const submit = async (e: any) => {
     e.preventDefault();
     setError('');
@@ -490,18 +570,22 @@ function Contact({ kind }: any) {
       title={title}
       intro={
         kind === 'volunteer'
-          ? 'Dites-nous comment vous aimeriez contribuer. L’organisation vous recontactera.'
+          ? textForLocale(
+              'Dites-nous comment vous aimeriez contribuer. L’organisation vous recontactera.',
+            )
           : kind === 'sponsor'
-            ? 'Soutenez un rendez-vous de vélo, course et marche au service de la recherche sur le cerveau. Construisons ensemble un partenariat adapté.'
-            : 'Une question sur votre inscription ou sur la journée? Écrivez-nous.'
+            ? textForLocale(
+                'Soutenez un rendez-vous de vélo, course et marche au service de la recherche sur le cerveau. Construisons ensemble un partenariat adapté.',
+              )
+            : textForLocale('Une question sur votre inscription ou sur la journée? Écrivez-nous.')
       }
     >
       <div className="form-layout">
         <div className="contact-aside">
           <Mail size={30} />
-          <h3>Parlons-en.</h3>
+          <h3>{textForLocale('Parlons-en.')}</h3>
           <a href={'mailto:' + data.settings.contact}>{data.settings.contact}</a>
-          <p>Thomas · Équipe Ride For Brains</p>
+          <p>{textForLocale('Thomas · Équipe Ride For Brains')}</p>
           {kind === 'volunteer' &&
             editorial(data.settings).volunteerRoles.map((r, i) => (
               <div key={i}>
@@ -532,60 +616,65 @@ function Contact({ kind }: any) {
           <Notice>{result}</Notice>
         ) : (
           <form className="form-panel" onSubmit={submit}>
-            <Field label="Votre nom">
+            <Field label={textForLocale('Votre nom')}>
               <input name="name" required maxLength={150} autoComplete="name" />
             </Field>
-            <Field label="Votre courriel">
+            <Field label={textForLocale('Votre courriel')}>
               <input name="email" type="email" required autoComplete="email" />
             </Field>
             {kind !== 'contact' && (
-              <Field label="Téléphone (facultatif)">
+              <Field label={textForLocale('Téléphone (facultatif)')}>
                 <input name="phone" type="tel" maxLength={35} autoComplete="tel" />
               </Field>
             )}
             {kind === 'volunteer' && (
               <>
-                <Field label="Vos disponibilités">
+                <Field label={textForLocale('Vos disponibilités')}>
                   <input name="availability" required maxLength={1000} />
                 </Field>
                 {editorial(data.settings).volunteerRoles.length > 0 ? (
-                  <Field label="Rôle préféré">
+                  <Field label={textForLocale('Rôle préféré')}>
                     <select name="preferredRole" defaultValue="">
-                      <option value="">Je suis disponible selon les besoins</option>
+                      <option value="">
+                        {textForLocale('Je suis disponible selon les besoins')}
+                      </option>
                       {editorial(data.settings).volunteerRoles.map((r) => (
                         <option key={r.title}>{r.title}</option>
                       ))}
                     </select>
                   </Field>
                 ) : (
-                  <Field label="Comment aimeriez-vous aider ?">
+                  <Field label={textForLocale('Comment aimeriez-vous aider ?')}>
                     <input name="preferredRole" maxLength={150} />
                   </Field>
                 )}
               </>
             )}
             {kind === 'sponsor' && (
-              <Field label="Entreprise / organisation">
+              <Field label={textForLocale('Entreprise / organisation')}>
                 <input name="company" required maxLength={150} autoComplete="organization" />
               </Field>
             )}
             <Field
               label={
                 kind === 'volunteer'
-                  ? 'Disponibilités et tâches qui vous intéressent'
-                  : 'Votre message'
+                  ? textForLocale('Disponibilités et tâches qui vous intéressent')
+                  : textForLocale('Votre message')
               }
             >
               <textarea name="message" required minLength={10} maxLength={5000} rows={5} />
             </Field>
             <label className="checkbox">
               <input type="checkbox" required />
-              J’accepte que l’équipe utilise ces renseignements pour répondre à ma demande.
+              {textForLocale(
+                'J’accepte que l’équipe utilise ces renseignements pour répondre à ma demande.',
+              )}
             </label>
             <Turnstile onToken={setToken} />
             {error && <Notice error>{error}</Notice>}
             <Button busy={busy}>
-              Transmettre ma demande <ArrowUpRight size={18} />
+              {textForLocale('Transmettre ma demande ')}
+              <ArrowUpRight size={18} />
             </Button>
           </form>
         )}
@@ -596,6 +685,15 @@ function Contact({ kind }: any) {
 function Legal({ page }: any) {
   const { data } = useApp();
   const s = data.settings;
+  if (currentLocale() === 'en-CA' && !data.services.englishLegal)
+    return (
+      <Page title={page === '/confidentialite' ? 'Privacy' : 'Participation terms'}>
+        <p>The English legal text is awaiting approval by the organizers.</p>
+        <a className="button" href={page} lang="fr-CA">
+          Lire le texte en français
+        </a>
+      </Page>
+    );
   return (
     <Page
       eyebrow={
@@ -603,43 +701,47 @@ function Legal({ page }: any) {
       }
       title={
         page === '/confidentialite'
-          ? 'Vos données, avec attention.'
+          ? textForLocale('Vos données, avec attention.')
           : page === '/annulation'
-            ? 'Annulation et remboursement.'
-            : 'Les conditions de participation.'
+            ? textForLocale('Annulation et remboursement.')
+            : textForLocale('Les conditions de participation.')
       }
     >
       <div className="prose legal">
         {page === '/annulation' ? (
           <>
-            <h2>Une règle simple</h2>
+            <h2>{textForLocale('Une règle simple')}</h2>
             <p>
-              À 15 jours ou plus du début de l’événement : remboursement complet de l’inscription. À
-              moins de 15 jours : aucun remboursement.
+              {textForLocale(
+                'À 15 jours ou plus du début de l’événement : remboursement complet de l’inscription. À moins de 15 jours : aucun remboursement.',
+              )}
             </p>
             <p>
-              Le calcul utilise le début de l’événement, fixé au{' '}
-              {new Date(s.eventAt).toLocaleString('fr-CA', { timeZone: 'America/Toronto' })}, heure
-              du Québec. Vous pouvez annuler une seule participation ou tout le dossier. Le
-              remboursement admissible porte sur le montant effectivement payé après rabais, diminué
-              des remboursements déjà reçus.
+              {textForLocale('Le calcul utilise le début de l’événement, fixé au')}{' '}
+              {new Date(s.eventAt).toLocaleString('fr-CA', { timeZone: 'America/Toronto' })}
+              {textForLocale(
+                ', heure du Québec. Vous pouvez annuler une seule participation ou tout le dossier. Le remboursement admissible porte sur le montant effectivement payé après rabais, diminué des remboursements déjà reçus.',
+              )}
             </p>
             <p>
-              La demande se fait depuis l’espace de l’acheteur. Un remboursement est confirmé
-              seulement après son traitement par le prestataire. {donationDestination}
+              {textForLocale(
+                'La demande se fait depuis l’espace de l’acheteur. Un remboursement est confirmé seulement après son traitement par le prestataire. ',
+              )}
+              {textForLocale(donationDestination)}
             </p>
             {!data.settings.launchReview?.eventApproved && (
               <p>
-                Les dispositions en cas d’annulation ou de report par l’organisation restent à
-                valider avant ouverture.
+                {textForLocale(
+                  'Les dispositions en cas d’annulation ou de report par l’organisation restent à valider avant ouverture.',
+                )}
               </p>
             )}
             {data.settings.launchReview &&
               [
-                ['cancellation', 'Annulation par l’organisation'],
+                ['cancellation', textForLocale('Annulation par l’organisation')],
                 ['postponement', 'Report'],
-                ['weather', 'Météo'],
-                ['forceMajeure', 'Force majeure'],
+                ['weather', textForLocale('Météo')],
+                ['forceMajeure', textForLocale('Force majeure')],
               ]
                 .filter(([key]) => data.settings.launchReview[key])
                 .map(([key, label]) => (
@@ -654,23 +756,26 @@ function Legal({ page }: any) {
         )}
         {page === '/confidentialite' && (
           <p>
-            Les cartes des parcours affichent les coordonnées GPX publiées par l’organisation sur un
-            fond OpenStreetMap. Quand vous ouvrez la page d’un parcours, votre navigateur demande
-            les images de carte à ce service et lui transmet notamment votre adresse IP. La carte ne
-            demande pas votre position GPS et ne transmet pas les renseignements de votre compte.{' '}
+            {textForLocale(
+              'Les cartes des parcours affichent les coordonnées GPX publiées par l’organisation sur un fond OpenStreetMap. Quand vous ouvrez la page d’un parcours, votre navigateur demande les images de carte à ce service et lui transmet notamment votre adresse IP. La carte ne demande pas votre position GPS et ne transmet pas les renseignements de votre compte.',
+            )}{' '}
             <a
               href="https://osmfoundation.org/wiki/Privacy_Policy"
               target="_blank"
               rel="noopener noreferrer"
             >
-              Confidentialité d’OpenStreetMap
+              {textForLocale('Confidentialité d’OpenStreetMap')}
             </a>
             .
           </p>
         )}
-        <p className="small">Version des conditions : {s.termsVersion}</p>
+        <p className="small">
+          {textForLocale('Version des conditions : ')}
+          {s.termsVersion}
+        </p>
         <a href={'mailto:' + s.contact} className="text-link">
-          Contacter le responsable <ArrowUpRight size={16} />
+          {textForLocale('Contacter le responsable ')}
+          <ArrowUpRight size={16} />
         </a>
       </div>
     </Page>
@@ -686,25 +791,30 @@ function Waitlist() {
     [busy, setBusy] = useState(false);
   return (
     <Page
-      eyebrow="LISTE D’ATTENTE"
-      title="Gardons une place pour votre élan."
-      intro="L’inscription sur cette liste ne réserve aucune place et ne déclenche aucun paiement."
+      eyebrow={textForLocale('LISTE D’ATTENTE')}
+      title={textForLocale('Gardons une place pour votre élan.')}
+      intro={textForLocale(
+        'L’inscription sur cette liste ne réserve aucune place et ne déclenche aucun paiement.',
+      )}
     >
       {!activity ? (
-        <Notice error>Activité introuvable.</Notice>
+        <Notice error>{textForLocale('Activité introuvable.')}</Notice>
       ) : !user ? (
         <Notice>
           <p>
-            Connectez-vous pour rejoindre la liste d’attente. Revenez ensuite sur cette activité.
+            {textForLocale(
+              'Connectez-vous pour rejoindre la liste d’attente. Revenez ensuite sur cette activité.',
+            )}
           </p>
           <Link className="button" to={accountUrl(location.pathname + location.search)}>
-            Me connecter
+            {textForLocale('Me connecter')}
           </Link>
         </Notice>
       ) : done ? (
         <Notice>
-          Votre demande est enregistrée. L’équipe doit vous contacter si une place devient
-          disponible; aucune inscription n’est confirmée automatiquement.
+          {textForLocale(
+            'Votre demande est enregistrée. L’équipe doit vous contacter si une place devient disponible; aucune inscription n’est confirmée automatiquement.',
+          )}
         </Notice>
       ) : (
         <form
@@ -733,35 +843,36 @@ function Waitlist() {
             {activity.name} · {activity.distance}
           </h2>
           <div className="form-grid">
-            <Field label="Prénom">
+            <Field label={textForLocale('Prénom')}>
               <input name="firstName" required maxLength={150} />
             </Field>
-            <Field label="Nom">
+            <Field label={textForLocale('Nom')}>
               <input name="lastName" required maxLength={150} />
             </Field>
           </div>
           {activity.sport === 'velo' ? (
             <label className="checkbox">
               <input type="checkbox" required />
-              J’aurai au moins 18 ans le jour de l’événement.
+              {textForLocale('J’aurai au moins 18 ans le jour de l’événement.')}
             </label>
           ) : (
             <>
-              <Field label="Âge le jour de l’événement">
+              <Field label={textForLocale('Âge le jour de l’événement')}>
                 <select name="ageGroup" required defaultValue="">
-                  <option value="">Choisissez</option>
-                  <option value="adult">18 ans ou plus</option>
-                  <option value="minor">Moins de 18 ans</option>
+                  <option value="">{textForLocale('Choisissez')}</option>
+                  <option value="adult">{textForLocale('18 ans ou plus')}</option>
+                  <option value="minor">{textForLocale('Moins de 18 ans')}</option>
                 </select>
               </Field>
               <p className="small">
-                La liste d’attente n’est pas une inscription. Pour participer, un mineur devra
-                obtenir l’accord d’un parent depuis son propre compte.
+                {textForLocale(
+                  'La liste d’attente n’est pas une inscription. Pour participer, un mineur devra obtenir l’accord d’un parent depuis son propre compte.',
+                )}
               </p>
             </>
           )}
           {error && <Notice error>{error}</Notice>}
-          <Button busy={busy}>Rejoindre la liste d’attente</Button>
+          <Button busy={busy}>{textForLocale('Rejoindre la liste d’attente')}</Button>
         </form>
       )}
     </Page>
@@ -829,11 +940,11 @@ function Registration() {
     return task
       .then(() => {
         lastSavedDraft.current = serialized;
-        if (sequence === saveSequence.current) setSaveStatus('Sauvegardé');
+        if (sequence === saveSequence.current) setSaveStatus(textForLocale('Sauvegardé'));
       })
       .catch((e) => {
         if (sequence === saveSequence.current)
-          setSaveStatus('Sauvegarde interrompue. Réessayez avant de quitter.');
+          setSaveStatus(textForLocale('Sauvegarde interrompue. Réessayez avant de quitter.'));
         throw e;
       });
   };
@@ -875,14 +986,18 @@ function Registration() {
           setPromo(d.promo || '');
           setStep(Math.min(2, d.step || 1));
           setDraftMessage(
-            'Votre brouillon a été restauré. Relisez et acceptez de nouveau les conditions avant de confirmer.',
+            textForLocale(
+              'Votre brouillon a été restauré. Relisez et acceptez de nouveau les conditions avant de confirmer.',
+            ),
           );
         }
       })
       .catch((e) => {
         if (active)
           setDraftLoadError(
-            'Impossible de retrouver votre brouillon pour le moment. Réessayez avant de continuer.',
+            textForLocale(
+              'Impossible de retrouver votre brouillon pour le moment. Réessayez avant de continuer.',
+            ),
           );
       })
       .finally(() => {
@@ -916,8 +1031,12 @@ function Registration() {
       await storeDraft();
       setDraftMessage(
         user
-          ? 'Votre brouillon est enregistré dans votre compte. Aucune place n’est réservée.'
-          : 'Votre brouillon est conservé de façon sécurisée pendant deux heures sur ce navigateur. Aucune place n’est réservée.',
+          ? textForLocale(
+              'Votre brouillon est enregistré dans votre compte. Aucune place n’est réservée.',
+            )
+          : textForLocale(
+              'Votre brouillon est conservé de façon sécurisée pendant deux heures sur ce navigateur. Aucune place n’est réservée.',
+            ),
       );
     } catch (e) {
       setError((e as Error).message);
@@ -938,7 +1057,9 @@ function Registration() {
           : r,
       ),
     );
-  const canRegister = data.environment === 'development' || s.registrationOpen;
+  const englishLegalPending = currentLocale() === 'en-CA' && !data.services.englishLegal;
+  const canRegister =
+    !englishLegalPending && (data.environment === 'development' || s.registrationOpen);
   const next = async (e: any) => {
     e.preventDefault();
     setError('');
@@ -953,7 +1074,9 @@ function Registration() {
           }
           if (people.some((p) => !p.adult && p.guardianStatus !== 'approved'))
             throw new Error(
-              'Le parent doit d’abord autoriser chaque participation mineure depuis son propre compte.',
+              textForLocale(
+                'Le parent doit d’abord autoriser chaque participation mineure depuis son propre compte.',
+              ),
             );
           const q = await api('/quote', { participants: people.map((p) => p.activityId), promo });
           setQuote(q);
@@ -996,20 +1119,31 @@ function Registration() {
   };
   return (
     <Page
-      eyebrow="VOTRE PROCHAIN DÉPART"
-      title="Faites partie du mouvement."
-      intro="Une inscription par personne et par activité. Les dons à Brain Canada se font séparément."
+      eyebrow={textForLocale('VOTRE PROCHAIN DÉPART')}
+      title={textForLocale('Faites partie du mouvement.')}
+      intro={textForLocale(
+        'Une inscription par personne et par activité. Les dons à Brain Canada se font séparément.',
+      )}
     >
-      {!canRegister ? (
+      {englishLegalPending ? (
+        <Notice>
+          Registration in English will open once the English terms are approved.{' '}
+          <a href={'/inscription' + location.search} lang="fr-CA">
+            Continuer en français
+          </a>
+        </Notice>
+      ) : !canRegister ? (
         <div className="closed-panel">
           <Clock size={34} />
-          <h2>Les inscriptions ouvriront bientôt.</h2>
+          <h2>{textForLocale('Les inscriptions ouvriront bientôt.')}</h2>
           <p>
-            Les activités et leurs tarifs sont déjà disponibles. L’organisation annoncera
-            l’ouverture dès que tous les renseignements seront confirmés.
+            {textForLocale(
+              'Les activités et leurs tarifs sont déjà disponibles. L’organisation annoncera l’ouverture dès que tous les renseignements seront confirmés.',
+            )}
           </p>
           <Link to="/activites" className="button">
-            Explorer les activités <ArrowRight size={18} />
+            {textForLocale('Explorer les activités ')}
+            <ArrowRight size={18} />
           </Link>
         </div>
       ) : (
@@ -1017,14 +1151,18 @@ function Registration() {
           {draftMessage && <Notice>{draftMessage}</Notice>}
           <div className="actions" style={{ marginBottom: 25, marginTop: 0 }}>
             <button type="button" className="text-link" onClick={saveDraft}>
-              Enregistrer pour plus tard
+              {textForLocale('Enregistrer pour plus tard')}
             </button>
             <span className="save-status" role="status" aria-live="polite">
               {saveStatus}
             </span>
           </div>
           <ol className="steps">
-            {['Le choix', 'Les participants', 'Le récapitulatif'].map((t, i) => (
+            {[
+              textForLocale('Le choix'),
+              textForLocale('Les participants'),
+              textForLocale('Le récapitulatif'),
+            ].map((t, i) => (
               <li key={t} className={step >= i + 1 ? 'current' : ''}>
                 <span>{step > i + 1 ? <Check size={15} /> : i + 1}</span>
                 {t}
@@ -1040,11 +1178,11 @@ function Registration() {
                   className="text-link"
                   onClick={() => setDraftRetry((n) => n + 1)}
                 >
-                  Réessayer
+                  {textForLocale('Réessayer')}
                 </button>
               </Notice>
             ) : (
-              <p role="status">Nous retrouvons votre brouillon…</p>
+              <p role="status">{textForLocale('Nous retrouvons votre brouillon…')}</p>
             ))}
           <div className="registration-layout" style={{ display: draftReady ? undefined : 'none' }}>
             <form
@@ -1073,10 +1211,10 @@ function Registration() {
             >
               {step === 1 ? (
                 <>
-                  <h2>Quel sera votre mouvement?</h2>
+                  <h2>{textForLocale('Quel sera votre mouvement?')}</h2>
                   {people.map((p, i) => (
                     <div className="person-select" key={i}>
-                      <Field label={'Participation ' + (i + 1)}>
+                      <Field label={textForLocale('Participation ') + (i + 1)}>
                         <select
                           value={p.activityId}
                           onChange={(e) => {
@@ -1100,10 +1238,10 @@ function Registration() {
                           {data.activities.map((a) => (
                             <option key={a.id} value={a.id}>
                               {a.sport === 'velo'
-                                ? 'Vélo'
+                                ? textForLocale('Vélo')
                                 : a.sport === 'course'
-                                  ? 'Course'
-                                  : 'Marche'}{' '}
+                                  ? textForLocale('Course')
+                                  : textForLocale('Marche')}{' '}
                               · {a.distance} — {money(a.price)}
                               {a.capacity !== null
                                 ? ' · ' + Math.max(0, a.capacity - a.occupied) + ' place(s)'
@@ -1116,7 +1254,7 @@ function Registration() {
                         <button
                           type="button"
                           className="icon-button"
-                          aria-label={'Retirer la participation ' + (i + 1)}
+                          aria-label={textForLocale('Retirer la participation ') + (i + 1)}
                           onClick={() => setPeople((rs) => rs.filter((_, n) => n !== i))}
                         >
                           <X size={18} />
@@ -1131,20 +1269,23 @@ function Registration() {
                     disabled={people.length >= 12}
                   >
                     <Plus size={18} />
-                    Ajouter une personne ou une activité
+                    {textForLocale('Ajouter une personne ou une activité')}
                   </button>
-                  <Field label="Code promotionnel (facultatif)">
+                  <Field label={textForLocale('Code promotionnel (facultatif)')}>
                     <input
                       value={promo}
                       onChange={(e) => setPromo(e.target.value.toUpperCase())}
                       maxLength={40}
                     />
                   </Field>
-                  <Notice>{participationPolicy} Aucune donnée médicale n’est demandée.</Notice>
+                  <Notice>
+                    {textForLocale(participationPolicy)}
+                    {textForLocale(' Aucune donnée médicale n’est demandée.')}
+                  </Notice>
                 </>
               ) : step === 2 ? (
                 <>
-                  <h2>Qui prend le départ?</h2>
+                  <h2>{textForLocale('Qui prend le départ?')}</h2>
                   {people.map((p, i) => {
                     const activity = data.activities.find((a) => a.id === p.activityId);
                     return (
@@ -1160,9 +1301,9 @@ function Registration() {
                       >
                         <summary>
                           <span>
-                            {p.firstName || 'Participant ' + (i + 1)} {p.lastName}
+                            {p.firstName || textForLocale('Participant ') + (i + 1)} {p.lastName}
                             <small>
-                              {sportLabel(activity.sport)} · {activity.distance}
+                              {textForLocale(sportLabel(activity.sport))} · {activity.distance}
                             </small>
                           </span>
                           <span
@@ -1172,7 +1313,9 @@ function Registration() {
                                 : 'participant-incomplete'
                             }
                           >
-                            {participantComplete(p, activity) ? '✓ Complété' : 'À compléter'}
+                            {participantComplete(p, activity)
+                              ? '✓ Complété'
+                              : textForLocale('À compléter')}
                           </span>
                         </summary>
                         <fieldset className="participant-fields">
@@ -1189,7 +1332,7 @@ function Registration() {
                                   change(i, 'emergencyPhone', people[0].emergencyPhone);
                                 }}
                               >
-                                Copier le contact d’urgence de{' '}
+                                {textForLocale('Copier le contact d’urgence de')}{' '}
                                 {people[0].firstName || 'la première personne'}
                               </button>
                               <button
@@ -1197,12 +1340,12 @@ function Registration() {
                                 className="text-link"
                                 onClick={() => change(i, 'phone', people[0].phone)}
                               >
-                                Utiliser le même téléphone
+                                {textForLocale('Utiliser le même téléphone')}
                               </button>
                             </div>
                           )}
                           <div className="form-grid">
-                            <Field label="Prénom">
+                            <Field label={textForLocale('Prénom')}>
                               <input
                                 required
                                 maxLength={150}
@@ -1211,7 +1354,7 @@ function Registration() {
                                 autoComplete="given-name"
                               />
                             </Field>
-                            <Field label="Nom">
+                            <Field label={textForLocale('Nom')}>
                               <input
                                 required
                                 maxLength={150}
@@ -1220,7 +1363,7 @@ function Registration() {
                                 autoComplete="family-name"
                               />
                             </Field>
-                            <Field label="Courriel du participant">
+                            <Field label={textForLocale('Courriel du participant')}>
                               <input
                                 required
                                 type="email"
@@ -1229,7 +1372,7 @@ function Registration() {
                                 autoComplete="email"
                               />
                             </Field>
-                            <Field label="Téléphone">
+                            <Field label={textForLocale('Téléphone')}>
                               <input
                                 required
                                 type="tel"
@@ -1240,7 +1383,7 @@ function Registration() {
                                 autoComplete="tel"
                               />
                             </Field>
-                            <Field label="Contact d’urgence · nom">
+                            <Field label={textForLocale('Contact d’urgence · nom')}>
                               <input
                                 required
                                 maxLength={150}
@@ -1248,7 +1391,7 @@ function Registration() {
                                 onChange={(e) => change(i, 'emergencyName', e.target.value)}
                               />
                             </Field>
-                            <Field label="Contact d’urgence · téléphone">
+                            <Field label={textForLocale('Contact d’urgence · téléphone')}>
                               <input
                                 required
                                 type="tel"
@@ -1272,10 +1415,14 @@ function Registration() {
                                 required
                                 onChange={(e) => change(i, 'adult', e.target.checked)}
                               />
-                              Cette personne aura au moins 18 ans le jour de l’événement.
+                              {textForLocale(
+                                'Cette personne aura au moins 18 ans le jour de l’événement.',
+                              )}
                             </label>
                           ) : (
-                            <Field label="Âge de cette personne le jour de l’événement">
+                            <Field
+                              label={textForLocale('Âge de cette personne le jour de l’événement')}
+                            >
                               <select
                                 required
                                 value={
@@ -1289,10 +1436,12 @@ function Registration() {
                                   )
                                 }
                               >
-                                <option value="">Choisissez</option>
-                                <option value="adult">18 ans ou plus</option>
+                                <option value="">{textForLocale('Choisissez')}</option>
+                                <option value="adult">{textForLocale('18 ans ou plus')}</option>
                                 <option value="minor">
-                                  Moins de 18 ans — autorisation parentale requise
+                                  {textForLocale(
+                                    'Moins de 18 ans — autorisation parentale requise',
+                                  )}
                                 </option>
                               </select>
                             </Field>
@@ -1304,8 +1453,9 @@ function Registration() {
                               required
                               onChange={(e) => change(i, 'authority', e.target.checked)}
                             />
-                            Je suis cette personne ou j’ai son autorisation pour l’inscrire et
-                            transmettre ses consentements.
+                            {textForLocale(
+                              'Je suis cette personne ou j’ai son autorisation pour l’inscrire et transmettre ses consentements.',
+                            )}
                           </label>
                           <label className="checkbox">
                             <input
@@ -1314,7 +1464,9 @@ function Registration() {
                               required
                               onChange={(e) => change(i, 'conditions', e.target.checked)}
                             />
-                            J’ai lu et j’accepte les conditions ci-dessous pour cette participation.
+                            {textForLocale(
+                              'J’ai lu et j’accepte les conditions ci-dessous pour cette participation.',
+                            )}
                           </label>
                           <label className="checkbox">
                             <input
@@ -1322,8 +1474,9 @@ function Registration() {
                               checked={p.photo}
                               onChange={(e) => change(i, 'photo', e.target.checked)}
                             />
-                            J’accepte les photos et vidéos de cette personne pour les communications
-                            de l’événement. (Facultatif)
+                            {textForLocale(
+                              'J’accepte les photos et vidéos de cette personne pour les communications de l’événement. (Facultatif)',
+                            )}
                           </label>
                           <label className="checkbox">
                             <input
@@ -1331,8 +1484,9 @@ function Registration() {
                               checked={p.marketing}
                               onChange={(e) => change(i, 'marketing', e.target.checked)}
                             />
-                            Cette personne souhaite recevoir les communications promotionnelles.
-                            (Facultatif)
+                            {textForLocale(
+                              'Cette personne souhaite recevoir les communications promotionnelles. (Facultatif)',
+                            )}
                           </label>
                           <label className="checkbox">
                             <input
@@ -1357,7 +1511,9 @@ function Registration() {
                                 setPeople(nextPeople);
                                 await api('/draft', { participants: nextPeople, promo }, 'PUT');
                                 setDraftMessage(
-                                  'La demande et votre brouillon sont enregistrés. Vous pourrez reprendre cette inscription après l’accord du parent.',
+                                  textForLocale(
+                                    'La demande et votre brouillon sont enregistrés. Vous pourrez reprendre cette inscription après l’accord du parent.',
+                                  ),
                                 );
                               }}
                               onSignIn={async () => {
@@ -1375,18 +1531,24 @@ function Registration() {
                     );
                   })}
                   <details className="terms-box" open>
-                    <summary>Conditions · version {s.termsVersion}</summary>
+                    <summary>
+                      {textForLocale('Conditions · version ')}
+                      {s.termsVersion}
+                    </summary>
                     <p className="prewrap">{s.terms}</p>
                   </details>
                 </>
               ) : (
                 <>
-                  <h2>Tout est prêt pour le départ?</h2>
+                  <h2>{textForLocale('Tout est prêt pour le départ?')}</h2>
                   {people.map((p, i) => {
                     const a = data.activities.find((a) => a.id === p.activityId);
                     return (
                       <div className="review-person" key={i}>
-                        <span className="eyebrow">PARTICIPATION {i + 1}</span>
+                        <span className="eyebrow">
+                          {textForLocale('PARTICIPATION ')}
+                          {i + 1}
+                        </span>
                         <h3>
                           {p.firstName} {p.lastName}
                         </h3>
@@ -1395,11 +1557,13 @@ function Registration() {
                         </p>
                         <p>{p.email}</p>
                         <details>
-                          <summary>Relire les réponses et consentements</summary>
+                          <summary>{textForLocale('Relire les réponses et consentements')}</summary>
                           <p>
-                            Téléphone : {p.phone}
+                            {textForLocale('Téléphone : ')}
+                            {p.phone}
                             <br />
-                            Urgence : {p.emergencyName} · {p.emergencyPhone}
+                            {textForLocale('Urgence : ')}
+                            {p.emergencyName} · {p.emergencyPhone}
                           </p>
                           <dl>
                             {a.fields.map((f: any) => (
@@ -1410,13 +1574,15 @@ function Registration() {
                             ))}
                           </dl>
                           <p>
-                            Photos : {p.photo ? 'oui' : 'non'} · Promotions :{' '}
-                            {p.marketing ? 'oui' : 'non'}
+                            {textForLocale('Photos : ')}
+                            {p.photo ? 'oui' : 'non'}
+                            {textForLocale(' · Promotions :')} {p.marketing ? 'oui' : 'non'}
                             <br />
-                            Liste publique :{' '}
+                            {textForLocale('Liste publique :')}{' '}
                             {p.publicListing ? 'prénom et initiale du nom' : 'nom privé'}
                             <br />
-                            Conditions acceptées · {s.termsVersion}
+                            {textForLocale('Conditions acceptées · ')}
+                            {s.termsVersion}
                           </p>
                         </details>
                       </div>
@@ -1426,11 +1592,15 @@ function Registration() {
                     <ShieldCheck size={19} />
                     <p>
                       {quote?.amount === 0
-                        ? 'Cette inscription est gratuite après application du tarif ou de la réduction.'
-                        : 'Le paiement s’effectue sur une page sécurisée. Vous retrouverez ensuite votre confirmation et vos billets ici.'}
+                        ? textForLocale(
+                            'Cette inscription est gratuite après application du tarif ou de la réduction.',
+                          )
+                        : textForLocale(
+                            'Le paiement s’effectue sur une page sécurisée. Vous retrouverez ensuite votre confirmation et vos billets ici.',
+                          )}
                     </p>
                   </Notice>
-                  <p className="fee-disclosure">{donationNotice}</p>
+                  <p className="fee-disclosure">{textForLocale(donationNotice)}</p>
                 </>
               )}
               {error && <Notice error>{error}</Notice>}
@@ -1445,31 +1615,34 @@ function Registration() {
                     }}
                   >
                     <ArrowLeft size={17} />
-                    Retour
+                    {textForLocale('Retour')}
                   </button>
                 )}
                 {step < 3 ? (
                   <Button type="submit" busy={busy}>
-                    {step === 2 && !user ? 'Créer un compte ou me connecter' : 'Continuer'}{' '}
+                    {step === 2 && !user
+                      ? textForLocale('Créer un compte ou me connecter')
+                      : textForLocale('Continuer')}{' '}
                     <ArrowRight size={18} />
                   </Button>
                 ) : (
                   <Button type="button" busy={busy} onClick={pay}>
                     {quote?.amount === 0
-                      ? 'Confirmer mon inscription'
-                      : 'Payer ' + money(quote?.amount || 0)}{' '}
+                      ? textForLocale('Confirmer mon inscription')
+                      : textForLocale('Payer ') + money(quote?.amount || 0)}{' '}
                     <ArrowUpRight size={18} />
                   </Button>
                 )}
               </div>
             </form>
             <aside className="order-summary">
-              <span className="eyebrow">VOTRE RENDEZ-VOUS</span>
+              <span className="eyebrow">{textForLocale('VOTRE RENDEZ-VOUS')}</span>
               <h3>{eventDate(s)}</h3>
               <p>
-                Accueil dès {s.reception.replace(':', ' h ')}
+                {textForLocale('Accueil dès ')}
+                {s.reception.replace(':', ' h ')}
                 <br />
-                {s.location || 'Lieu à confirmer'}
+                {s.location || textForLocale('Lieu à confirmer')}
               </p>
               <hr />
               {people.map((p, i) => {
@@ -1477,7 +1650,7 @@ function Registration() {
                 return (
                   <div className="summary-line" key={i}>
                     <span>
-                      {sportLabel(a.sport)} · {a.distance}
+                      {textForLocale(sportLabel(a.sport))} · {a.distance}
                     </span>
                     <b>{money(a.price)}</b>
                   </div>
@@ -1485,7 +1658,7 @@ function Registration() {
               })}
               {quote?.discount > 0 && (
                 <div className="summary-line">
-                  <span>Réduction</span>
+                  <span>{textForLocale('Réduction')}</span>
                   <b>−{money(quote.discount)}</b>
                 </div>
               )}
@@ -1502,19 +1675,23 @@ function Registration() {
                 </b>
               </div>
               <p className="small">
-                Dollars canadiens.{' '}
+                {textForLocale('Dollars canadiens.')}{' '}
                 {s.taxMode === 'included'
-                  ? 'Taxes incluses.'
+                  ? textForLocale('Taxes incluses.')
                   : s.taxMode === 'not_applicable'
-                    ? 'Taxes non applicables selon la configuration de l’organisation.'
-                    : 'Fiscalité à valider avant l’ouverture réelle.'}
+                    ? textForLocale(
+                        'Taxes non applicables selon la configuration de l’organisation.',
+                      )
+                    : textForLocale('Fiscalité à valider avant l’ouverture réelle.')}
               </p>
               <p className="small">
-                Remboursement à 100 % à 15 jours ou plus de l’événement. Aucun remboursement à moins
-                de 15 jours.
+                {textForLocale(
+                  'Remboursement à 100 % à 15 jours ou plus de l’événement. Aucun remboursement à moins de 15 jours.',
+                )}
               </p>
               <Link to="/annulation" className="text-link small">
-                Lire la politique <ArrowUpRight size={14} />
+                {textForLocale('Lire la politique ')}
+                <ArrowUpRight size={14} />
               </Link>
             </aside>
           </div>
@@ -1547,9 +1724,13 @@ function Participant() {
   }, [user]);
   if (!user)
     return (
-      <Page eyebrow="VOTRE ESPACE" title="Vos inscriptions vous attendent.">
+      <Page
+        eyebrow={textForLocale('VOTRE ESPACE')}
+        title={textForLocale('Vos inscriptions vous attendent.')}
+      >
         <Link to="/connexion" className="button">
-          Me connecter <ArrowRight size={18} />
+          {textForLocale('Me connecter ')}
+          <ArrowRight size={18} />
         </Link>
       </Page>
     );
@@ -1569,8 +1750,12 @@ function Participant() {
     if (
       !confirm(
         registrationId
-          ? 'Annuler uniquement cette participation? Les autres participations restent valides. Le remboursement dépend du délai de 15 jours.'
-          : 'Annuler toutes les participations de ce dossier? Le remboursement sera calculé selon la politique affichée.',
+          ? textForLocale(
+              'Annuler uniquement cette participation? Les autres participations restent valides. Le remboursement dépend du délai de 15 jours.',
+            )
+          : textForLocale(
+              'Annuler toutes les participations de ce dossier? Le remboursement sera calculé selon la politique affichée.',
+            ),
       )
     )
       return;
@@ -1585,8 +1770,9 @@ function Participant() {
       );
       setMessage(
         r.refundRequested
-          ? 'Demande enregistrée. Remboursement en traitement : ' + money(r.refundRequested)
-          : 'Dossier annulé.',
+          ? textForLocale('Demande enregistrée. Remboursement en traitement : ') +
+              money(r.refundRequested)
+          : textForLocale('Dossier annulé.'),
       );
       await load();
     } catch (e) {
@@ -1604,7 +1790,7 @@ function Participant() {
     );
     try {
       await api('/registrations/' + id, body, 'PATCH');
-      setMessage('Coordonnées mises à jour.');
+      setMessage(textForLocale('Coordonnées mises à jour.'));
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -1612,20 +1798,31 @@ function Participant() {
   };
   return (
     <Page
-      eyebrow="VOTRE ESPACE PARTICIPANT"
-      title={'Bonjour ' + user.name.split(' ')[0] + '.'}
-      intro="Les dossiers ci-dessous sont ceux que vous avez inscrits avec ce compte."
+      eyebrow={textForLocale('VOTRE ESPACE PARTICIPANT')}
+      title={textForLocale('Bonjour ') + user.name.split(' ')[0] + '.'}
+      intro={textForLocale(
+        'Les dossiers ci-dessous sont ceux que vous avez inscrits avec ce compte.',
+      )}
     >
       <div className="actions account-actions">
+        <Link to="/mon-jour-j" className="button">
+          {textForLocale('Mon jour J ')}
+          <CalendarDays size={17} />
+        </Link>
+        <Link to="/ma-communaute" className="button outline">
+          {textForLocale('Ma communauté')}
+        </Link>
         <Link to="/autorisations-parentales" className="button outline">
-          Autorisations parentales
+          {textForLocale('Autorisations parentales')}
         </Link>
         <Link to="/inscription" className="button">
-          Ajouter une inscription <Plus size={17} />
+          {textForLocale('Ajouter une inscription ')}
+          <Plus size={17} />
         </Link>
         {user.role !== 'participant' && (
           <Link className="button outline" to={staffHome(user.role)}>
-            {user.role === 'admin' ? 'Administration' : 'Espace équipe'} <Settings2 size={17} />
+            {user.role === 'admin' ? 'Administration' : textForLocale('Espace équipe')}{' '}
+            <Settings2 size={17} />
           </Link>
         )}
         <button
@@ -1636,7 +1833,8 @@ function Participant() {
             go('/');
           }}
         >
-          Me déconnecter <LogOut size={16} />
+          {textForLocale('Me déconnecter ')}
+          <LogOut size={16} />
         </button>
       </div>
       {new URLSearchParams(location.search).has('commande') && (
@@ -1647,21 +1845,23 @@ function Participant() {
       )}
       {new URLSearchParams(location.search).has('abandon') && (
         <Notice>
-          Le paiement a été interrompu. La réservation expirera automatiquement. Aucun billet n’est
-          délivré tant que le paiement n’est pas confirmé.
+          {textForLocale(
+            'Le paiement a été interrompu. La réservation expirera automatiquement. Aucun billet n’est délivré tant que le paiement n’est pas confirmé.',
+          )}
         </Notice>
       )}
       {error && <Notice error>{error}</Notice>}
       {message && <Notice>{message}</Notice>}
       {!state ? (
-        <p>Chargement des dossiers…</p>
+        <p>{textForLocale('Chargement des dossiers…')}</p>
       ) : !state.registrations.length ? (
         <div className="empty">
           <Ticket size={40} />
-          <h2>Votre prochain défi vous attend.</h2>
-          <p>Aucune inscription pour le moment.</p>
+          <h2>{textForLocale('Votre prochain défi vous attend.')}</h2>
+          <p>{textForLocale('Aucune inscription pour le moment.')}</p>
           <Link className="text-link" to="/activites">
-            Découvrir les activités <ArrowRight size={18} />
+            {textForLocale('Découvrir les activités ')}
+            <ArrowRight size={18} />
           </Link>
         </div>
       ) : (
@@ -1680,24 +1880,25 @@ function Participant() {
               </p>
               <ListingPreference registration={r} onSaved={load} />
               <div className="summary-line">
-                <span>Prix de cette participation</span>
+                <span>{textForLocale('Prix de cette participation')}</span>
                 <strong>{money(r.price)}</strong>
               </div>
               <details className="payment-details">
-                <summary>Paiement et reçu du dossier</summary>
+                <summary>{textForLocale('Paiement et reçu du dossier')}</summary>
                 <div className="summary-line">
-                  <span>Total / remboursé</span>
+                  <span>{textForLocale('Total / remboursé')}</span>
                   <strong>
                     {money(r.order_amount)} / {money(r.refunded)}
                   </strong>
                 </div>
                 <Link className="text-link" to={'/recu/' + r.order_id}>
-                  Reçu de paiement
+                  {textForLocale('Reçu de paiement')}
                 </Link>
               </details>
               <details>
                 <summary>
-                  Mes réponses et consentements <ChevronDown size={16} />
+                  {textForLocale('Mes réponses et consentements ')}
+                  <ChevronDown size={16} />
                 </summary>
                 <dl>
                   {r.fields.map((f: any) => (
@@ -1706,28 +1907,31 @@ function Participant() {
                       <dd>
                         {typeof r.answers[f.id] === 'boolean'
                           ? r.answers[f.id]
-                            ? 'Oui'
-                            : 'Non'
+                            ? textForLocale('Oui')
+                            : textForLocale('Non')
                           : r.answers[f.id] || '—'}
                       </dd>
                     </React.Fragment>
                   ))}
                 </dl>
                 <p>
-                  Conditions acceptées le {date(r.accepted_at)} · {r.conditions_version}
+                  {textForLocale('Conditions acceptées le ')}
+                  {date(r.accepted_at)} · {r.conditions_version}
                   <br />
-                  Photos : {r.photo ? 'Oui' : 'Non'} · Communications promotionnelles :{' '}
-                  {r.marketing ? 'Oui' : 'Non'}
+                  {textForLocale('Photos : ')}
+                  {r.photo ? textForLocale('Oui') : textForLocale('Non')}
+                  {textForLocale(' · Communications promotionnelles :')}{' '}
+                  {r.marketing ? textForLocale('Oui') : textForLocale('Non')}
                 </p>
                 <details>
-                  <summary>Texte des conditions acceptées</summary>
+                  <summary>{textForLocale('Texte des conditions acceptées')}</summary>
                   <p className="prewrap">{r.conditions_snapshot}</p>
                 </details>
                 <form className="form-grid" onSubmit={(e) => edit(e, r.id)}>
                   {[
-                    ['phone', 'Téléphone'],
-                    ['emergency_name', 'Contact d’urgence'],
-                    ['emergency_phone', 'Téléphone d’urgence'],
+                    ['phone', textForLocale('Téléphone')],
+                    ['emergency_name', textForLocale('Contact d’urgence')],
+                    ['emergency_phone', textForLocale('Téléphone d’urgence')],
                   ]
                     .filter(([k]) => data.settings.editableFields.includes(k))
                     .map(([k, l]) => (
@@ -1735,31 +1939,35 @@ function Participant() {
                         <input name={k} defaultValue={r[k]} required />
                       </Field>
                     ))}
-                  <Button type="submit">Enregistrer les coordonnées</Button>
+                  <Button type="submit">{textForLocale('Enregistrer les coordonnées')}</Button>
                 </form>
               </details>
               <div className="actions">
                 {['confirmed', 'partially_refunded'].includes(r.status) && (
                   <>
+                    <Link className="text-link" to={'/mon-jour-j?participation=' + r.id}>
+                      {textForLocale('Préparer mon jour J')}
+                    </Link>
                     <button className="button" onClick={() => showTicket(r.id)}>
-                      Voir mon QR <Ticket size={17} />
+                      {textForLocale('Voir mon QR ')}
+                      <Ticket size={17} />
                     </button>
                     <Link className="button light" to={'/billet/' + r.id}>
-                      Ouvrir mon billet
+                      {textForLocale('Ouvrir mon billet')}
                     </Link>
                     <button
                       className="text-link"
                       disabled={busy === r.order_id}
                       onClick={() => cancel(r.order_id, r.id)}
                     >
-                      Annuler cette participation
+                      {textForLocale('Annuler cette participation')}
                     </button>
                     <button
                       className="text-link"
                       disabled={busy === r.order_id}
                       onClick={() => cancel(r.order_id)}
                     >
-                      Annuler tout le dossier
+                      {textForLocale('Annuler tout le dossier')}
                     </button>
                   </>
                 )}
@@ -1775,7 +1983,8 @@ function Participant() {
                       }
                     }}
                   >
-                    Reprendre le paiement <ArrowUpRight size={17} />
+                    {textForLocale('Reprendre le paiement ')}
+                    <ArrowUpRight size={17} />
                   </button>
                 )}
               </div>
@@ -1785,7 +1994,7 @@ function Participant() {
       )}
       {state?.messages.length > 0 && (
         <section className="inbox">
-          <h2>Les messages de l’organisation</h2>
+          <h2>{textForLocale('Les messages de l’organisation')}</h2>
           {state.messages.map((m: any, i: number) => (
             <details key={i}>
               <summary>
@@ -1798,7 +2007,7 @@ function Participant() {
         </section>
       )}
       <details className="privacy-tools">
-        <summary>Mes données personnelles</summary>
+        <summary>{textForLocale('Mes données personnelles')}</summary>
         <button
           type="button"
           className="text-link"
@@ -1806,12 +2015,13 @@ function Participant() {
             downloadPrivate('/account/export', 'mes-donnees.json').catch((e) => setError(e.message))
           }
         >
-          Exporter mes données <Download size={16} />
+          {textForLocale('Exporter mes données ')}
+          <Download size={16} />
         </button>
         <button
           className="text-link"
           onClick={async () => {
-            if (confirm('Transmettre une demande de suppression au responsable?')) {
+            if (confirm(textForLocale('Transmettre une demande de suppression au responsable?'))) {
               try {
                 const r = await api('/account/deletion-request', {});
                 setMessage(r.message);
@@ -1821,7 +2031,7 @@ function Participant() {
             }
           }}
         >
-          Demander la suppression de mes données
+          {textForLocale('Demander la suppression de mes données')}
         </button>
       </details>
       {ticket && (
@@ -1830,7 +2040,7 @@ function Participant() {
             className="ticket-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="Votre billet"
+            aria-label={textForLocale('Votre billet')}
             onKeyDown={(e) => {
               if (e.key === 'Escape') closeTicket();
               if (e.key === 'Tab') {
@@ -1852,7 +2062,7 @@ function Participant() {
               className="modal-close icon-button"
               autoFocus
               onClick={() => closeTicket()}
-              aria-label="Fermer"
+              aria-label={textForLocale('Fermer')}
             >
               <X />
             </button>
@@ -1869,17 +2079,23 @@ function Participant() {
               src={ticket.image}
               width="260"
               height="260"
-              alt="Code QR du billet, à présenter à l’accueil"
+              alt={textForLocale('Code QR du billet, à présenter à l’accueil')}
             />
-            <p className="small">Billet personnel · Nº {ticket.id.slice(0, 8)}</p>
+            <p className="small">
+              {textForLocale('Billet personnel · Nº ')}
+              {ticket.id.slice(0, 8)}
+            </p>
             <a
               className="button"
               href={ticket.image}
               download={'billet-' + ticket.id.slice(0, 8) + '.png'}
             >
-              Télécharger le QR <Download size={17} />
+              {textForLocale('Télécharger le QR ')}
+              <Download size={17} />
             </a>
-            <p className="small">Conservez cette image pour la présenter à l’accueil.</p>
+            <p className="small">
+              {textForLocale('Conservez cette image pour la présenter à l’accueil.')}
+            </p>
           </section>
         </div>
       )}
@@ -1935,14 +2151,18 @@ function Unsubscribe() {
   const [result, setResult] = useState(''),
     [error, setError] = useState('');
   return (
-    <Page eyebrow="VOS PRÉFÉRENCES" title="Gardez le lien à votre façon.">
+    <Page
+      eyebrow={textForLocale('VOS PRÉFÉRENCES')}
+      title={textForLocale('Gardez le lien à votre façon.')}
+    >
       {result ? (
         <Notice>{result}</Notice>
       ) : (
         <>
           <p>
-            Vous pouvez vous désabonner des messages promotionnels. Les informations nécessaires à
-            votre participation restent accessibles dans votre espace.
+            {textForLocale(
+              'Vous pouvez vous désabonner des messages promotionnels. Les informations nécessaires à votre participation restent accessibles dans votre espace.',
+            )}
           </p>
           {error && <Notice error>{error}</Notice>}
           <Button
@@ -1951,13 +2171,13 @@ function Unsubscribe() {
                 await api('/unsubscribe', {
                   token: new URLSearchParams(location.search).get('token'),
                 });
-                setResult('Vous êtes désabonné des communications promotionnelles.');
+                setResult(textForLocale('Vous êtes désabonné des communications promotionnelles.'));
               } catch (e) {
                 setError((e as Error).message);
               }
             }}
           >
-            Confirmer mon désabonnement
+            {textForLocale('Confirmer mon désabonnement')}
           </Button>
         </>
       )}

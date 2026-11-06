@@ -4,6 +4,10 @@ import {
   staffApiPath,
   STAFF_REAUTH_MESSAGE,
 } from '../shared/admin-access';
+import { currentLocale } from '../shared/locale';
+import { t as textForLocale } from './locale-copy';
+import { systemCopy } from '../shared/system-copy';
+const errorCopy = (message: string) => systemCopy(message, currentLocale());
 export class AdminAccessRequired extends Error {
   readonly code = 'ADMIN_ACCESS_REQUIRED';
   constructor() {
@@ -20,10 +24,16 @@ async function siteFetch(path: string, init: RequestInit = {}) {
       ...init,
       credentials: 'same-origin',
       redirect: 'manual',
-      headers: { ...sessionHeaders(), ...init.headers },
+      headers: {
+        ...sessionHeaders(),
+        ...(currentLocale() === 'en-CA' ? { 'X-RFB-Locale': 'en-CA' } : {}),
+        ...init.headers,
+      },
     });
   } catch {
-    throw new Error('Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.');
+    throw new Error(
+      errorCopy('Impossible de joindre le serveur. Vérifiez votre connexion, puis réessayez.'),
+    );
   }
   if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
     if (isAdminApi(path)) throw new AdminAccessRequired();
@@ -52,15 +62,24 @@ export function saveSessionPreference(tabKey: string | null) {
       );
   }
 }
-export async function downloadPrivate(path: string, filename: string) {
-  const res = await siteFetch(path);
+export async function downloadPrivate(path: string, filename: string, body?: object) {
+  const res = await siteFetch(
+    path,
+    body
+      ? {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      : undefined,
+  );
   if (
     res.status === 401 &&
     typeof location !== 'undefined' &&
     location.pathname === '/organisation'
   )
     throw new Error(STAFF_REAUTH_MESSAGE);
-  if (!res.ok) throw new Error('Le téléchargement a échoué. Vérifiez votre connexion.');
+  if (!res.ok) throw new Error(errorCopy('Le téléchargement a échoué. Vérifiez votre connexion.'));
   const url = URL.createObjectURL(await res.blob()),
     a = document.createElement('a');
   a.href = url;
@@ -97,27 +116,29 @@ export async function api<T = any>(
     )
       throw new AdminAccessRequired();
     throw new Error(
-      typeof message === 'string'
-        ? message
-        : res.status === 429
-          ? 'Trop de demandes. Réessayez dans quelques minutes.'
-          : 'Le service est temporairement indisponible. Réessayez dans quelques minutes.',
+      errorCopy(
+        typeof message === 'string'
+          ? message
+          : res.status === 429
+            ? 'Trop de demandes. Réessayez dans quelques minutes.'
+            : 'Le service est temporairement indisponible. Réessayez dans quelques minutes.',
+      ),
     );
   }
   if (data === undefined)
     throw new Error(
-      'Le serveur a renvoyé une réponse inattendue. Réessayez dans quelques minutes.',
+      errorCopy('Le serveur a renvoyé une réponse inattendue. Réessayez dans quelques minutes.'),
     );
   if (path === '/auth/sign-out') saveSessionPreference(null);
   return data as T;
 }
 export const money = (cents: number) =>
-  new Intl.NumberFormat('fr-CA', {
+  new Intl.NumberFormat(currentLocale(), {
     style: 'currency',
     currency: 'CAD',
     maximumFractionDigits: 2,
   }).format(cents / 100);
-export const statuses: Record<string, string> = {
+const statusLabels = {
   draft: 'Brouillon',
   pending: 'Paiement en attente',
   confirmed: 'Confirmée',
@@ -140,8 +161,11 @@ export const statuses: Record<string, string> = {
   unsubscribed: 'Désabonné',
   succeeded: 'Terminé',
 };
+export const statuses: Record<string, string> = Object.fromEntries(
+  Object.entries(statusLabels).map(([key, label]) => [key, textForLocale(label)]),
+);
 export const date = (seconds: number) =>
-  new Date(seconds * 1000).toLocaleString('fr-CA', {
+  new Date(seconds * 1000).toLocaleString(currentLocale(), {
     timeZone: 'America/Toronto',
     dateStyle: 'medium',
     timeStyle: 'short',

@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import { useEffect, useState } from 'react';
 import { storedMotionOff, setMotionOff } from '../shared/motion';
 export default function MotionToggle() {
@@ -24,10 +25,10 @@ export default function MotionToggle() {
       }}
     >
       {systemReduced
-        ? 'Animations réduites selon votre appareil'
+        ? textForLocale('Animations réduites selon votre appareil')
         : reduced
-          ? 'Animations réduites · réactiver'
-          : 'Réduire les animations'}
+          ? textForLocale('Animations réduites · réactiver')
+          : textForLocale('Réduire les animations')}
     </button>
   );
 }

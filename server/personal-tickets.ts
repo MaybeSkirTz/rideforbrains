@@ -4,10 +4,11 @@ import { uuid, now, parse, isLocal } from './types';
 import { digest, opaqueToken, seal, unseal } from './crypto';
 import { mailStatement, processMail } from './mail';
 import { email } from './validation';
+import { localeFromHeader, localizedPath } from '../shared/locale';
 
 const cancelQueuedTicketMail = (env: Env, id: string) =>
   env.DB.prepare(
-    "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Lien de billet remplacé ou révoqué' WHERE registration_id=? AND body LIKE '%/billet-personnel#%' AND status IN ('queued','retry','development')",
+    "UPDATE outbox SET status='cancelled',lease_until=NULL,error='Lien de billet remplacé ou révoqué' WHERE registration_id=? AND (body LIKE '%/billet-personnel#%' OR body LIKE '%/personal-ticket#%') AND status IN ('queued','retry','development')",
   ).bind(id);
 
 // Access grants belong to one registration and one exact QR/contact version.
@@ -30,7 +31,12 @@ export async function ticketDelivery(
       ? ((await unseal(existing.token_cipher, env.BETTER_AUTH_SECRET)) as string)
       : opaqueToken(),
     hash = await digest(token);
-  const body = `Bonjour ${r.first_name},\n\n${buyerName} vous a inscrit à Ride For Brains — ${r.activity_name || r.name || 'Votre activité'} ${r.distance || ''}.\n\nVoir mon billet : ${env.APP_URL}/billet-personnel#${token}\n\nCe lien personnel donne accès uniquement à votre billet. Conservez-le sans le partager. Présentez votre QR à l’accueil. Les dons à Brain Canada sont distincts des frais d’inscription.`;
+  const locale = localeFromHeader(r.locale || parse(r.event_snapshot)?.locale);
+  const link = env.APP_URL + localizedPath('/billet-personnel', locale) + '#' + token;
+  const english = locale === 'en-CA';
+  const body = english
+    ? `Hello ${r.first_name},\n\n${buyerName} registered you for Ride For Brains — ${r.activity_name || r.name || 'Your activity'} ${r.distance || ''}.\n\nView my ticket: ${link}\n\nThis private link opens your ticket. Keep it to yourself and show your QR code at check-in. Donations to Brain Canada are separate from registration fees.`
+    : `Bonjour ${r.first_name},\n\n${buyerName} vous a inscrit à Ride For Brains — ${r.activity_name || r.name || 'Votre activité'} ${r.distance || ''}.\n\nVoir mon billet : ${link}\n\nCe lien personnel donne accès uniquement à votre billet. Conservez-le sans le partager. Présentez votre QR à l’accueil. Les dons à Brain Canada sont distincts des frais d’inscription.`;
   return [
     env.DB.prepare(
       "INSERT INTO participant_ticket_access(registration_id,token_hash,token_cipher,ticket_hash,recipient) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM visible_registrations WHERE id=? AND email=? AND ticket=? AND status IN ('confirmed','partially_refunded')) AND NOT EXISTS(SELECT 1 FROM participant_email_changes WHERE registration_id=? AND status='pending' AND expires_at>unixepoch()) ON CONFLICT(registration_id) DO UPDATE SET token_hash=excluded.token_hash,token_cipher=excluded.token_cipher,ticket_hash=excluded.ticket_hash,recipient=excluded.recipient,revoked_at=NULL,created_at=unixepoch() WHERE ?=1 OR participant_ticket_access.ticket_hash!=excluded.ticket_hash OR participant_ticket_access.recipient!=excluded.recipient",
@@ -47,17 +53,18 @@ export async function ticketDelivery(
       allowRevive ? 1 : 0,
     ),
     env.DB.prepare(
-      "INSERT OR IGNORE INTO outbox(id,dedupe,user_id,registration_id,recipient,subject,body,kind,available_at,status) SELECT ?,?,?,?,?,?,?,'operational',?,? WHERE EXISTS(SELECT 1 FROM participant_ticket_access p JOIN visible_registrations r ON r.id=p.registration_id WHERE p.registration_id=? AND p.token_hash=? AND p.revoked_at IS NULL AND r.status IN ('confirmed','partially_refunded'))",
+      "INSERT OR IGNORE INTO outbox(id,dedupe,user_id,registration_id,recipient,subject,body,kind,available_at,status,locale) SELECT ?,?,?,?,?,?,?,'operational',?,?,? WHERE EXISTS(SELECT 1 FROM participant_ticket_access p JOIN visible_registrations r ON r.id=p.registration_id WHERE p.registration_id=? AND p.token_hash=? AND p.revoked_at IS NULL AND r.status IN ('confirmed','partially_refunded'))",
     ).bind(
       uuid(),
       dedupe,
       null,
       r.id,
       r.email,
-      subject,
+      english ? 'Your Ride For Brains ticket' : subject,
       body,
       now(),
       isLocal(env) ? 'development' : 'queued',
+      locale,
       r.id,
       hash,
     ),
@@ -68,7 +75,7 @@ export async function ticketDelivery(
 export async function deliverMissingTickets(env: Env, registrationId?: string) {
   const rows = (
     await env.DB.prepare(
-      "SELECT r.*,a.name AS activity_name,a.distance,u.name AS buyer_name FROM visible_registrations r JOIN orders o ON o.id=r.order_id JOIN user u ON u.id=o.user_id JOIN activities a ON a.id=r.activity_id LEFT JOIN participant_ticket_access p ON p.registration_id=r.id WHERE r.status IN ('confirmed','partially_refunded') AND (p.registration_id IS NULL OR p.recipient!=r.email" +
+      "SELECT r.*,a.name AS activity_name,a.distance,u.name AS buyer_name,o.event_snapshot FROM visible_registrations r JOIN orders o ON o.id=r.order_id JOIN user u ON u.id=o.user_id JOIN activities a ON a.id=r.activity_id LEFT JOIN participant_ticket_access p ON p.registration_id=r.id WHERE r.status IN ('confirmed','partially_refunded') AND (p.registration_id IS NULL OR p.recipient!=r.email" +
         (registrationId ? ' OR p.revoked_at IS NOT NULL' : '') +
         ") AND NOT EXISTS(SELECT 1 FROM participant_email_changes e WHERE e.registration_id=r.id AND e.status='pending' AND e.expires_at>unixepoch())" +
         (registrationId ? ' AND r.id=?' : '') +
@@ -88,6 +95,15 @@ export async function deliverMissingTickets(env: Env, registrationId?: string) {
         !!registrationId,
       ),
     );
+}
+
+export async function findPersonalTicket(env: Env, token: string) {
+  const ticket = await env.DB.prepare(
+    "SELECT r.id,r.ticket,r.first_name,r.last_name,r.activity_snapshot,r.email,r.status,p.ticket_hash,o.event_snapshot,a.name,a.distance,a.sport FROM participant_ticket_access p JOIN visible_registrations r ON r.id=p.registration_id JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE p.token_hash=? AND p.revoked_at IS NULL AND p.recipient=r.email AND r.status IN ('confirmed','partially_refunded')",
+  )
+    .bind(await digest(token))
+    .first<any>();
+  return ticket && (await digest(ticket.ticket)) === ticket.ticket_hash ? ticket : null;
 }
 
 export function personalTicketRoutes(
@@ -127,13 +143,8 @@ export function personalTicketRoutes(
       .object({ token: z.string().regex(/^[a-f0-9]{64}$/) })
       .strict()
       .parse(await c.req.json());
-    const r = await c.env.DB.prepare(
-      "SELECT r.id,r.ticket,r.first_name,r.last_name,r.activity_snapshot,r.email,r.status,p.ticket_hash,o.event_snapshot,a.name,a.distance,a.sport FROM participant_ticket_access p JOIN visible_registrations r ON r.id=p.registration_id JOIN orders o ON o.id=r.order_id JOIN activities a ON a.id=r.activity_id WHERE p.token_hash=? AND p.revoked_at IS NULL AND p.recipient=r.email AND r.status IN ('confirmed','partially_refunded')",
-    )
-      .bind(await digest(token))
-      .first();
-    if (!r || (await digest(r.ticket)) !== r.ticket_hash)
-      fail(404, 'Ce billet est indisponible. Demandez un nouveau lien à l’organisation.');
+    const r = await findPersonalTicket(c.env, token);
+    if (!r) fail(404, 'Ce billet est indisponible. Demandez un nouveau lien à l’organisation.');
     const event = parse(r.event_snapshot),
       activity = parse(r.activity_snapshot);
     return c.json({

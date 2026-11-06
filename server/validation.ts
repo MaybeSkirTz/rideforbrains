@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { editorialSchema, publicURL, visibleFields } from './editorial';
+import { impactConfig } from './impact';
+import { englishSettingsSchema } from './english';
 const line = z
   .string()
   .trim()
@@ -109,6 +111,33 @@ export const settingsSchema = z
     editableFields: z.array(z.enum(['phone', 'emergency_name', 'emergency_phone'])),
     terms: z.string().min(10).max(16000),
     privacy: z.string().min(10).max(16000),
+    english: englishSettingsSchema.optional(),
+    impact: impactConfig.optional(),
+    financialTransparency: z
+      .object({
+        title: line,
+        introduction: z.string().max(2500),
+        categories: z
+          .array(
+            z
+              .object({ name: line, description: z.string().max(1500), enabled: z.boolean() })
+              .strict(),
+          )
+          .max(24),
+      })
+      .strict()
+      .optional(),
+    dayJ: z
+      .object({
+        parking: z.string().trim().max(2500).optional(),
+        access: z.string().trim().max(2500).optional(),
+        instructions: z.string().trim().max(4000).optional(),
+        equipment: z.string().trim().max(2500).optional(),
+        weather: z.string().trim().max(2500).optional(),
+        state: z.string().trim().max(160).optional(),
+      })
+      .strict()
+      .optional(),
     cause: z.string().max(5000),
     story: z.string().max(6000),
     faq: z.array(z.object({ q: line, a: z.string().max(3000), ...visibleFields }).strict()).max(50),
@@ -170,6 +199,10 @@ export const activitySchema = z
     closes_at: z.number().int().nullable(),
     enabled: z.union([z.literal(0), z.literal(1)]),
     route: z.object({
+      arrival: z
+        .string()
+        .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)
+        .optional(),
       departure: z
         .string()
         .regex(/^\d{2}:\d{2}$/)

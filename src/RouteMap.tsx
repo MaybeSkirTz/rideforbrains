@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -164,12 +165,12 @@ export default function RouteMap({ route, name }: { route: any; name: string }) 
         <p className="route-map-legend">
           <span>
             <i className="route-start" />
-            {loop ? 'Départ et arrivée' : 'Départ'}
+            {loop ? 'Départ et arrivée' : textForLocale('Départ')}
           </span>
           {!loop && (
             <span>
               <i className="route-finish" />
-              Arrivée
+              {textForLocale('Arrivée')}
             </span>
           )}
         </p>
@@ -178,7 +179,7 @@ export default function RouteMap({ route, name }: { route: any; name: string }) 
           <p role="status">
             Le fond de carte n’a pas pu se charger. Le tracé GPX reste affiché.{' '}
             <button type="button" className="text-link" onClick={() => retry.current()}>
-              Réessayer
+              {textForLocale('Réessayer')}
             </button>
           </p>
         )}

@@ -35,6 +35,16 @@ import {
 import { mailStatement, processMail } from './mail';
 import { stripe, startCheckout, handleStripeEvent, processRefunds } from './payments';
 import { paymentFailure } from './payment-errors';
+import { dayJRoutes } from './day-j';
+import { importantNoticeRoutes } from './important-notices';
+import { referralAttribution, referralRoutes } from './referrals';
+import { communityRoutes } from './community';
+import { impactRoutes } from './impact';
+import { syncWalletRevocations, walletAvailability, walletRoutes } from './wallet';
+import { finisherRoutes } from './finisher';
+import { englishLegal, legalForVersion, localeFromHeader } from '../shared/locale';
+import { systemCopy } from '../shared/system-copy';
+import { localizeEnglishSettings } from './english';
 
 export const app = new Hono<AppContext>();
 const adminApi = new Hono<AppContext>();
@@ -170,6 +180,8 @@ app.get('/api/admin/access', async (c) => {
   return c.redirect('/admin', 302);
 });
 app.onError((e, c) => {
+  const locale = localeFromHeader(c.req.header('X-RFB-Locale'));
+  const message = (value: string) => systemCopy(value, locale);
   const payment = paymentFailure(e),
     requestId = uuid();
   if (!(e instanceof HTTPException) && !(e instanceof z.ZodError))
@@ -191,57 +203,78 @@ app.onError((e, c) => {
   if (payment)
     return c.json(
       {
-        error: payment.message + ' Référence : ' + requestId.slice(0, 8) + '.',
+        error:
+          message(payment.message) +
+          (locale === 'en-CA' ? ' Reference: ' : ' Référence : ') +
+          requestId.slice(0, 8) +
+          '.',
         reference: requestId,
       },
       payment.status as any,
     );
-  if (e instanceof HTTPException) return c.json({ error: e.message }, e.status);
+  if (e instanceof HTTPException) return c.json({ error: message(e.message) }, e.status);
   if (e instanceof z.ZodError)
     return c.json(
       {
-        error: e.issues
-          .map((x) => `${x.path.join('.')} : ${x.message}`)
-          .slice(0, 4)
-          .join(' · '),
+        error:
+          locale === 'en-CA'
+            ? 'Check the information you entered and try again.'
+            : e.issues
+                .map((x) => `${x.path.join('.')} : ${x.message}`)
+                .slice(0, 4)
+                .join(' · '),
       },
       400,
     );
   if (/CAPACITY_EXCEEDED/.test(String(e)))
     return c.json(
-      { error: 'Une activité est complète. Aucune inscription du panier n’a été réservée.' },
+      {
+        error: message('Une activité est complète. Aucune inscription du panier n’a été réservée.'),
+      },
       409,
     );
   if (/PROMO_UNAVAILABLE/.test(String(e)))
-    return c.json({ error: 'Code promotionnel invalide, expiré ou épuisé.' }, 409);
+    return c.json({ error: message('Code promotionnel invalide, expiré ou épuisé.') }, 409);
   if (
     /GUARDIAN_AUTH_REQUIRED|GUARDIAN_IDENTITY_LOCKED|registration_guardian_request/.test(String(e))
   )
     return c.json(
       {
-        error:
+        error: message(
           'L’autorisation parentale est absente, a changé ou a déjà été utilisée. Demandez une nouvelle autorisation.',
+        ),
       },
       409,
     );
   if (/ACTIVITY_AGE_RESTRICTED/.test(String(e)))
-    return c.json({ error: 'Le vélo est réservé aux personnes de 18 ans et plus.' }, 400);
+    return c.json({ error: message('Le vélo est réservé aux personnes de 18 ans et plus.') }, 400);
   return c.json(
-    { error: 'La demande n’a pas pu être traitée. Réessayez ou contactez l’organisation.' },
+    {
+      error: message('La demande n’a pas pu être traitée. Réessayez ou contactez l’organisation.'),
+    },
     500,
   );
 });
 app.get('/api/public', async (c) => {
-  const s = await settings(c.env);
+  const original = await settings(c.env);
+  const english =
+    localeFromHeader(c.req.header('X-RFB-Locale')) === 'en-CA' && !!original.english?.published;
+  const s = english ? localizeEnglishSettings(original) : original;
   const rows = await c.env.DB.prepare(
     "SELECT a.*, f.fields, (SELECT COUNT(*) FROM visible_registrations r WHERE r.activity_id=a.id AND (r.status IN ('confirmed','partially_refunded','refunding') OR (r.status='pending' AND r.expires_at>unixepoch()))) AS occupied FROM activities a JOIN forms f ON f.activity_id=a.id AND f.version=a.form_version WHERE a.enabled=1",
   ).all<any>();
   return c.json({
     settings: {
       ...s,
+      dayJ: undefined,
+      english: undefined,
+      financialTransparency: s.financialTransparency && {
+        ...s.financialTransparency,
+        categories: s.financialTransparency.categories.filter((category: any) => category.enabled),
+      },
       registrationOpen:
         !!s.registrationOpen &&
-        (isLocal(c.env) || c.env.PAYMENTS_MODE !== 'live' || launchIssues(s).length === 0),
+        (isLocal(c.env) || c.env.PAYMENTS_MODE !== 'live' || launchIssues(original).length === 0),
       editorial: editorial(s),
       faq: published(s.faq),
       partners: published(s.partners),
@@ -249,8 +282,14 @@ app.get('/api/public', async (c) => {
     },
     activities: rows.results.map((a) => ({
       ...a,
+      name: (english && original.english.activities?.[a.id]?.name) || a.name,
       minimumAge: a.sport === 'velo' ? 18 : 0,
-      route: parse(a.route),
+      route: {
+        ...parse(a.route),
+        ...(english && original.english.activities?.[a.id]?.description
+          ? { description: original.english.activities[a.id].description }
+          : {}),
+      },
       fields: parse(a.fields, []),
     })),
     environment: isLocal(c.env)
@@ -262,6 +301,9 @@ app.get('/api/public', async (c) => {
       payments: !!c.env.STRIPE_SECRET_KEY,
       mail: isLocal(c.env) || !!(c.env.RESEND_API_KEY && c.env.MAIL_FROM),
       turnstile: c.env.TURNSTILE_SITE_KEY || null,
+      wallet: walletAvailability(c.env),
+      english: !!original.english?.published,
+      englishLegal: englishLegal(original),
     },
   });
 });
@@ -477,8 +519,8 @@ app.post('/api/orders', async (c) => {
     .first<any>();
   if (existing) return c.json(existing);
   const s = await settings(c.env);
-  if (input.termsVersion !== s.termsVersion)
-    fail(409, 'Les conditions ont été mises à jour. Relisez-les avant de continuer.');
+  const legal = legalForVersion(s, input.termsVersion);
+  if (!legal) fail(409, 'Les conditions ont été mises à jour. Relisez-les avant de continuer.');
   if (
     !isLocal(c.env) &&
     (!s.registrationOpen ||
@@ -513,7 +555,7 @@ app.post('/api/orders', async (c) => {
     if (!activity) fail(400, 'Activité introuvable');
     if (!p.adult && activity.sport === 'velo')
       fail(400, 'Le vélo est réservé aux personnes de 18 ans et plus.');
-    const guardian = await approvedGuardian(c.env, p, s.termsVersion, a.id, s.eventAt);
+    const guardian = await approvedGuardian(c.env, p, input.termsVersion, a.id, s.eventAt);
     if (!p.adult && !guardian)
       fail(
         409,
@@ -558,7 +600,7 @@ app.post('/api/orders', async (c) => {
     status = amount === 0 ? 'confirmed' : 'pending';
   const stmts = [
     c.env.DB.prepare(
-      'INSERT INTO orders(id,user_id,request_key,amount,status,promo,discount_percent,expires_at,event_snapshot) VALUES(?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO orders(id,user_id,request_key,amount,status,promo,discount_percent,expires_at,event_snapshot,is_test) VALUES(?,?,?,?,?,?,?,?,?,?)',
     ).bind(
       id,
       a.id,
@@ -575,6 +617,7 @@ app.post('/api/orders', async (c) => {
         edition: s.edition,
         reception: s.reception,
         location: s.location,
+        locale: legal!.locale,
         policies: s.launchReview
           ? {
               cancellation: s.launchReview.cancellation,
@@ -584,8 +627,11 @@ app.post('/api/orders', async (c) => {
             }
           : undefined,
       }),
+      Number(!isLocal(c.env) && c.env.PAYMENTS_MODE !== 'live'),
     ),
   ];
+  const attribution = await referralAttribution(c, id, a.id);
+  if (attribution) stmts.push(attribution);
   for (const r of records) {
     const { p, activity } = r;
     if (r.guardian)
@@ -611,8 +657,8 @@ app.post('/api/orders', async (c) => {
         json(r.answers),
         activity.fields,
         activity.form_version,
-        s.termsVersion,
-        s.terms,
+        input.termsVersion,
+        legal!.terms,
         p.photo ? 1 : 0,
         p.marketing ? 1 : 0,
         r.price,
@@ -645,6 +691,7 @@ app.post('/api/orders', async (c) => {
             first_name: p.firstName,
             activity_name: activity.name,
             distance: activity.distance,
+            locale: legal!.locale,
           },
           a.name,
           'confirmed:' + r.id,
@@ -700,7 +747,7 @@ app.get('/api/registrations', async (c) => {
     })),
     messages: (
       await c.env.DB.prepare(
-        "SELECT subject,body,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND user_id=? AND kind!='login' AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 40",
+        "SELECT subject,body,created_at FROM outbox WHERE (registration_id IS NULL OR registration_id IN (SELECT id FROM visible_registrations)) AND (notice_id IS NULL OR (available_at<=unixepoch() AND status!='cancelled')) AND user_id=? AND kind!='login' AND subject NOT LIKE 'Votre lien%' ORDER BY created_at DESC LIMIT 40",
       )
         .bind(a.id)
         .all()
@@ -1092,6 +1139,25 @@ adminApi.put('/settings', async (c) => {
     .object({ settings: settingsSchema, revision: z.number().int() })
     .parse(await c.req.json());
   const before = await settings(c.env);
+  const en = body.settings.english;
+  if (
+    en?.legalApproved &&
+    en.sourceVersion === body.settings.termsVersion &&
+    (!en.legalVersion ||
+      en.legalVersion === body.settings.termsVersion ||
+      en.terms.trim().length < 10 ||
+      en.privacy.trim().length < 10)
+  )
+    fail(400, 'La validation anglaise exige des textes complets et une version distincte.');
+  if (
+    before.english?.legalApproved &&
+    en?.legalApproved &&
+    before.english.legalVersion === en.legalVersion &&
+    (before.english.terms !== en.terms ||
+      before.english.privacy !== en.privacy ||
+      before.english.sourceVersion !== en.sourceVersion)
+  )
+    fail(409, 'Changez la version anglaise après une modification des textes légaux.');
   if (
     (before.terms !== body.settings.terms ||
       (['cancellation', 'postponement', 'weather', 'forceMajeure'] as const).some(
@@ -1125,6 +1191,14 @@ adminApi.put('/settings', async (c) => {
     .first();
   if (!updated) fail(409, 'Un autre membre a modifié les réglages. Rechargez la page.');
   await audit(c.env, a.id, 'settings.updated', 'event', { revision: body.revision + 1 }).run();
+  if (json(before.financialTransparency) !== json(body.settings.financialTransparency))
+    await audit(c.env, a.id, 'transparency.updated', 'event', {
+      revision: body.revision + 1,
+    }).run();
+  if (en?.published && (!before.english?.published || json(before.english) !== json(en)))
+    await audit(c.env, a.id, 'english.published', 'event', {
+      legal: englishLegal(body.settings),
+    }).run();
   return c.json(updated);
 });
 adminApi.put('/activities', async (c) => {
@@ -1243,6 +1317,7 @@ ownerApi.put('/staff', async (c) => {
           'refunds',
           'event',
           'communications',
+          'community',
           'checkin',
           'submissions',
         ]),
@@ -1411,7 +1486,7 @@ adminApi.get('/mail', async (c) => {
     ).results.map((row: any) => ({
       ...row,
       body: String(row.body).replace(
-        /\/(billet-personnel|confirmer-courriel)#[a-f0-9]{64}/g,
+        /\/(billet-personnel|personal-ticket|confirmer-courriel|confirm-email)#[a-f0-9]{64}/g,
         '/$1#[lien personnel masqué]',
       ),
     })),
@@ -1679,6 +1754,13 @@ app.post('/api/webhooks/resend', async (c) => {
   return c.json({ ok: true });
 });
 transferRoutes(app, { actor, settings, audit, fail, limited });
+dayJRoutes(app, { actor, settings });
+importantNoticeRoutes(adminApi, { staffActor, audit, fail, limited });
+referralRoutes(app, adminApi, { actor, staffActor, limited });
+communityRoutes(app, adminApi, { actor, staffActor, audit, fail, limited });
+impactRoutes(app, adminApi, { settings, staffActor, audit });
+walletRoutes(app, adminApi, { actor, staffActor, fail, limited });
+finisherRoutes(app, actor);
 guardianRoutes(app, { actor, settings, audit, fail, limited });
 publicParticipantRoutes(app, { actor, audit, fail, limited });
 offlineRoutes(adminApi, { staffActor, audit, fail });
@@ -1725,6 +1807,7 @@ export async function scheduled(env: Env) {
     ['personal_tickets', () => deliverMissingTickets(env)],
     ['refunds', () => processRefunds(env)],
     ['mail', () => processMail(env)],
+    ['wallet', () => syncWalletRevocations(env)],
   ] as const;
   const results = await Promise.allSettled(tasks.map(([, run]) => run()));
   const failures = results.flatMap((r, i) => (r.status === 'rejected' ? [tasks[i][0]] : []));

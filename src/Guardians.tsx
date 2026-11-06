@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from './context';
 import { api, date } from './api';
@@ -5,10 +6,10 @@ import { Page, Link, Button, Field, Notice, go } from './ui';
 import { accountUrl } from '../shared/navigation';
 import { guardianConsentText } from '../shared/participation';
 const statusLabel: Record<string, string> = {
-  pending: 'En attente du parent',
-  approved: 'Autorisation donnée',
-  declined: 'Autorisation refusée',
-  cancelled: 'Autorisation à refaire',
+  pending: textForLocale('En attente du parent'),
+  approved: textForLocale('Autorisation donnée'),
+  declined: textForLocale('Autorisation refusée'),
+  cancelled: textForLocale('Autorisation à refaire'),
 };
 export function GuardianRequest({
   participant: p,
@@ -72,14 +73,14 @@ export function GuardianRequest({
     }
   };
   return (
-    <section className="guardian-panel" aria-label="Autorisation parentale">
-      <h3>Un parent doit autoriser cette participation.</h3>
+    <section className="guardian-panel" aria-label={textForLocale('Autorisation parentale')}>
+      <h3>{textForLocale('Un parent doit autoriser cette participation.')}</h3>
       <p>
-        Le parent ou tuteur doit se connecter à son propre compte. Les renseignements de cette
-        participation et les choix de consentement lui seront présentés. Aucun paiement ni billet
-        n’est créé avant son accord.
+        {textForLocale(
+          'Le parent ou tuteur doit se connecter à son propre compte. Les renseignements de cette participation et les choix de consentement lui seront présentés. Aucun paiement ni billet n’est créé avant son accord.',
+        )}
       </p>
-      <Field label="Courriel du parent ou tuteur">
+      <Field label={textForLocale('Courriel du parent ou tuteur')}>
         <input
           type="email"
           required
@@ -93,13 +94,13 @@ export function GuardianRequest({
       {p.guardianStatus && <Notice>{statusLabel[p.guardianStatus] || p.guardianStatus}</Notice>}
       {!user ? (
         <Button type="button" onClick={onSignIn}>
-          Me connecter pour envoyer la demande
+          {textForLocale('Me connecter pour envoyer la demande')}
         </Button>
       ) : (
         <div className="actions">
           {p.guardianStatus !== 'approved' && (
             <Button type="button" busy={busy} onClick={send}>
-              Demander l’autorisation au parent
+              {textForLocale('Demander l’autorisation au parent')}
             </Button>
           )}
           {p.guardianRequestId && (
@@ -109,18 +110,19 @@ export function GuardianRequest({
               disabled={busy}
               onClick={() => load().catch((e) => setError(e.message))}
             >
-              Actualiser l’autorisation
+              {textForLocale('Actualiser l’autorisation')}
             </Button>
           )}
         </div>
       )}
       <p className="small">
-        Après accord, reprenez l’inscription depuis ce compte participant. Une modification des
-        renseignements demande une nouvelle autorisation.
+        {textForLocale(
+          'Après accord, reprenez l’inscription depuis ce compte participant. Une modification des renseignements demande une nouvelle autorisation.',
+        )}
       </p>
       {p.guardianRequestId && (
         <Link to="/autorisations-parentales">
-          Voir mes demandes et changer de compte si nécessaire
+          {textForLocale('Voir mes demandes et changer de compte si nécessaire')}
         </Link>
       )}
     </section>
@@ -141,22 +143,24 @@ function ParentDecision({ request: r, onDone }: { request: any; onDone: () => vo
         {r.used ? ' · Utilisée pour une inscription' : ''}
       </p>
       <p>
-        Événement :{' '}
-        {new Date(r.activity.eventAt).toLocaleDateString('fr-CA', { dateStyle: 'long' })} · Demande
-        valable jusqu’au {date(r.expiresAt)}.
+        {textForLocale('Événement :')}{' '}
+        {new Date(r.activity.eventAt).toLocaleDateString('fr-CA', { dateStyle: 'long' })}
+        {textForLocale(' · Demande valable jusqu’au ')}
+        {date(r.expiresAt)}.
       </p>
       <details>
-        <summary>Examiner les renseignements et les conditions</summary>
+        <summary>{textForLocale('Examiner les renseignements et les conditions')}</summary>
         <dl>
-          <dt>Participant</dt>
+          <dt>{textForLocale('Participant')}</dt>
           <dd>
-            {p.firstName} {p.lastName} · moins de 18 ans
+            {p.firstName} {p.lastName}
+            {textForLocale(' · moins de 18 ans')}
           </dd>
-          <dt>Courriel et téléphone</dt>
+          <dt>{textForLocale('Courriel et téléphone')}</dt>
           <dd>
             {p.email} · {p.phone}
           </dd>
-          <dt>Contact d’urgence</dt>
+          <dt>{textForLocale('Contact d’urgence')}</dt>
           <dd>
             {p.emergencyName} · {p.emergencyPhone}
           </dd>
@@ -166,14 +170,21 @@ function ParentDecision({ request: r, onDone }: { request: any; onDone: () => vo
               <dd>{String(p.answers[f.id] ?? '—')}</dd>
             </React.Fragment>
           ))}
-          <dt>Photos et vidéos de l’événement</dt>
-          <dd>{p.photo ? 'Consentement demandé' : 'Non'}</dd>
-          <dt>Communications promotionnelles</dt>
-          <dd>{p.marketing ? 'Consentement demandé' : 'Non'}</dd>
-          <dt>Liste publique des participants</dt>
-          <dd>{p.publicListing ? 'Prénom et initiale du nom — consentement demandé' : 'Non'}</dd>
+          <dt>{textForLocale('Photos et vidéos de l’événement')}</dt>
+          <dd>{p.photo ? textForLocale('Consentement demandé') : textForLocale('Non')}</dd>
+          <dt>{textForLocale('Communications promotionnelles')}</dt>
+          <dd>{p.marketing ? textForLocale('Consentement demandé') : textForLocale('Non')}</dd>
+          <dt>{textForLocale('Liste publique des participants')}</dt>
+          <dd>
+            {p.publicListing
+              ? textForLocale('Prénom et initiale du nom — consentement demandé')
+              : textForLocale('Non')}
+          </dd>
         </dl>
-        <h4>Conditions · {r.termsVersion}</h4>
+        <h4>
+          {textForLocale('Conditions · ')}
+          {r.termsVersion}
+        </h4>
         <p className="prewrap">{r.terms}</p>
       </details>
       {r.status === 'pending' && r.expiresAt * 1000 > Date.now() && !r.used && (
@@ -203,9 +214,9 @@ function ParentDecision({ request: r, onDone }: { request: any; onDone: () => vo
             }
           }}
         >
-          <p>{guardianConsentText}</p>
+          <p>{r.consentText || guardianConsentText}</p>
           <div className="form-grid">
-            <Field label="Votre prénom et nom">
+            <Field label={textForLocale('Votre prénom et nom')}>
               <input
                 name="signature"
                 defaultValue={user.name}
@@ -214,22 +225,23 @@ function ParentDecision({ request: r, onDone }: { request: any; onDone: () => vo
                 maxLength={150}
               />
             </Field>
-            <Field label="Votre lien avec le participant">
+            <Field label={textForLocale('Votre lien avec le participant')}>
               <select name="relationship">
-                <option value="parent">Parent</option>
-                <option value="legal_guardian">Tuteur légal</option>
+                <option value="parent">{textForLocale('Parent')}</option>
+                <option value="legal_guardian">{textForLocale('Tuteur légal')}</option>
               </select>
             </Field>
           </div>
           <label className="checkbox">
             <input type="checkbox" required />
-            Je confirme être majeur, parent ou tuteur légal de ce participant et avoir lu les
-            renseignements, les choix de consentement et les conditions.
+            {textForLocale(
+              'Je confirme être majeur, parent ou tuteur légal de ce participant et avoir lu les renseignements, les choix de consentement et les conditions.',
+            )}
           </label>
           {error && <Notice error>{error}</Notice>}
           <div className="actions">
             <Button type="submit" name="decision" value="approve" busy={busy}>
-              Autoriser cette participation
+              {textForLocale('Autoriser cette participation')}
             </Button>
             <Button
               type="submit"
@@ -238,14 +250,17 @@ function ParentDecision({ request: r, onDone }: { request: any; onDone: () => vo
               className="outline"
               disabled={busy}
             >
-              Refuser cette participation
+              {textForLocale('Refuser cette participation')}
             </Button>
           </div>
         </form>
       )}
       {r.consent && (
         <p className="small">
-          Décision enregistrée le {date(r.decidedAt)} par {r.consent.signature}.
+          {textForLocale('Décision enregistrée le ')}
+          {date(r.decidedAt)}
+          {textForLocale(' par ')}
+          {r.consent.signature}.
         </p>
       )}
     </article>
@@ -265,29 +280,39 @@ export default function Guardians() {
   }, [user?.id]);
   if (!user)
     return (
-      <Page eyebrow="Autorisation parentale" title="Le parent a son propre espace.">
+      <Page
+        eyebrow={textForLocale('Autorisation parentale')}
+        title={textForLocale('Le parent a son propre espace.')}
+      >
         <p>
-          Connectez-vous avec le courriel auquel la demande a été envoyée. L’enfant et le parent
-          doivent utiliser deux comptes distincts.
+          {textForLocale(
+            'Connectez-vous avec le courriel auquel la demande a été envoyée. L’enfant et le parent doivent utiliser deux comptes distincts.',
+          )}
         </p>
         <div className="actions">
           <Link className="button" to={accountUrl('/autorisations-parentales', 'sign-in')}>
-            Me connecter comme parent
+            {textForLocale('Me connecter comme parent')}
           </Link>
           <Link className="button outline" to={accountUrl('/autorisations-parentales', 'create')}>
-            Créer mon compte parent
+            {textForLocale('Créer mon compte parent')}
           </Link>
         </div>
       </Page>
     );
   return (
-    <Page eyebrow="Parents et participants" title="Les autorisations parentales.">
+    <Page
+      eyebrow={textForLocale('Parents et participants')}
+      title={textForLocale('Les autorisations parentales.')}
+    >
       <p>
-        Compte connecté : {user.email}. Un parent ou tuteur majeur autorise chaque participation
-        depuis son propre compte. L’autorisation ne déclenche aucun paiement.
+        {textForLocale('Compte connecté : ')}
+        {user.email}
+        {textForLocale(
+          '. Un parent ou tuteur majeur autorise chaque participation depuis son propre compte. L’autorisation ne déclenche aucun paiement.',
+        )}
       </p>
       <div className="actions">
-        <Button onClick={load}>Actualiser les demandes</Button>
+        <Button onClick={load}>{textForLocale('Actualiser les demandes')}</Button>
         <Button
           className="outline"
           onClick={async () => {
@@ -296,30 +321,36 @@ export default function Guardians() {
             go(accountUrl('/autorisations-parentales', 'sign-in'));
           }}
         >
-          Changer de compte
+          {textForLocale('Changer de compte')}
         </Button>
       </div>
       {error && <Notice error>{error}</Notice>}
       {message && <Notice>{message}</Notice>}
-      <h2>Demandes à examiner comme parent</h2>
+      <h2>{textForLocale('Demandes à examiner comme parent')}</h2>
       {requests?.asParent.map((r: any) => (
         <ParentDecision
           key={r.id}
           request={r}
           onDone={() => {
             setMessage(
-              'Votre décision a été enregistrée. Le participant peut actualiser son autorisation dans son inscription.',
+              textForLocale(
+                'Votre décision a été enregistrée. Le participant peut actualiser son autorisation dans son inscription.',
+              ),
             );
             load();
           }}
         />
       ))}
       {requests?.asParent.length === 0 && (
-        <p>Aucune demande pour ce courriel. Vérifiez l’adresse que le participant a indiquée.</p>
+        <p>
+          {textForLocale(
+            'Aucune demande pour ce courriel. Vérifiez l’adresse que le participant a indiquée.',
+          )}
+        </p>
       )}
       {!!requests?.asParticipant.length && (
         <section>
-          <h2>Mes demandes comme participant</h2>
+          <h2>{textForLocale('Mes demandes comme participant')}</h2>
           {requests.asParticipant.map((r: any) => (
             <article className="guardian-card" key={r.id}>
               <h3>
@@ -327,10 +358,12 @@ export default function Guardians() {
                 {r.activity.distance}
               </h3>
               <p>
-                {statusLabel[r.status]} · Parent : {r.guardianEmail}
+                {statusLabel[r.status]}
+                {textForLocale(' · Parent : ')}
+                {r.guardianEmail}
               </p>
               <Link className="button" to={'/inscription?activite=' + r.participant.activityId}>
-                Reprendre mon inscription
+                {textForLocale('Reprendre mon inscription')}
               </Link>
             </article>
           ))}

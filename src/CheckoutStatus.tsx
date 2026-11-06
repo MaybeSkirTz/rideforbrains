@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { Notice } from './ui';
@@ -33,29 +34,36 @@ export default function CheckoutStatus({
       <div role="status" aria-live="polite">
         {state === 'confirmed' ? (
           <>
-            <strong>✓ Inscription confirmée</strong>
-            <p>Votre billet est prêt dans votre espace ci-dessous.</p>
+            <strong>{textForLocale('✓ Inscription confirmée')}</strong>
+            <p>{textForLocale('Votre billet est prêt dans votre espace ci-dessous.')}</p>
           </>
         ) : state === 'review' ? (
-          <p>Votre paiement a été reçu. L’organisation vérifie votre dossier et vous contactera.</p>
+          <p>
+            {textForLocale(
+              'Votre paiement a été reçu. L’organisation vérifie votre dossier et vous contactera.',
+            )}
+          </p>
         ) : state === 'stopped' ? (
           <p>
-            Le paiement n’a pas été finalisé. Retrouvez les options disponibles dans votre dossier.
+            {textForLocale(
+              'Le paiement n’a pas été finalisé. Retrouvez les options disponibles dans votre dossier.',
+            )}
           </p>
         ) : state === 'waiting' ? (
           <>
             <p>
-              Votre paiement est en cours de confirmation. Vous pouvez fermer cette page. Nous vous
-              enverrons un courriel lorsque votre inscription sera confirmée.
+              {textForLocale(
+                'Votre paiement est en cours de confirmation. Vous pouvez fermer cette page. Nous vous enverrons un courriel lorsque votre inscription sera confirmée.',
+              )}
             </p>
             <button type="button" className="text-link" onClick={() => setAttempt((a) => a + 1)}>
-              Vérifier de nouveau
+              {textForLocale('Vérifier de nouveau')}
             </button>
           </>
         ) : (
           <>
-            <strong>Nous confirmons votre inscription…</strong>
-            <p>Votre dossier se met à jour automatiquement.</p>
+            <strong>{textForLocale('Nous confirmons votre inscription…')}</strong>
+            <p>{textForLocale('Votre dossier se met à jour automatiquement.')}</p>
           </>
         )}
       </div>

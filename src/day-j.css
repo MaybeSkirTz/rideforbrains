@@ -1,0 +1,88 @@
+.day-j-summary {
+  background: #e8eddf;
+  border: 1px solid var(--line);
+  padding: clamp(16px, 4vw, 40px);
+}
+.day-j-grid {
+  display: grid;
+  gap: 22px;
+  margin-top: 22px;
+}
+.day-j-grid > section {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.day-j-grid.today .day-j-details {
+  order: -1;
+}
+.day-j-facts {
+  list-style: none;
+  padding: 0;
+}
+.day-j-facts li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+.day-j-personal {
+  border: 0;
+  margin: 20px 0;
+  padding: 0;
+}
+.day-j-personal legend,
+.day-j-details dt {
+  font-weight: 700;
+}
+.day-j-details dl > div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.day-j-details dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.day-j-share,
+.day-j-share-card,
+.day-j-notices {
+  margin-top: 24px;
+}
+.day-j-share-card canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 420px;
+  margin: 0 0 16px;
+}
+.finisher-certificate {
+  margin-bottom: 20px;
+  padding: clamp(20px, 6vw, 72px);
+  text-align: center;
+  border: 2px solid var(--line);
+  background: #e8eddf;
+  overflow-wrap: anywhere;
+}
+.finisher-certificate h2 {
+  font-size: clamp(2.6rem, 8vw, 6rem);
+}
+.finisher-name {
+  font-size: clamp(1.35rem, 4vw, 2.2rem);
+  font-weight: 700;
+}
+@media print {
+  .finisher-actions,
+  .motion-preference {
+    display: none !important;
+  }
+  .finisher-certificate {
+    break-inside: avoid;
+  }
+}
+@media (min-width: 760px) {
+  .day-j-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
+  }
+}

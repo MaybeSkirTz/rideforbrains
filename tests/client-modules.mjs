@@ -13,10 +13,17 @@ export function clientModules() {
     album: 'src/PhotoAlbum.tsx',
     routeGeometry: 'shared/route-map.ts',
     motion: 'shared/motion.ts',
+    locale: 'shared/locale.ts',
+    localeCopy: 'src/locale-copy.ts',
+    systemCopy: 'shared/system-copy.ts',
   })) {
     const source = readFileSync(path, 'utf8')
       .replaceAll("'../shared/admin-access'", "'./access.mjs'")
-      .replaceAll("'../shared/motion'", "'./motion.mjs'");
+      .replaceAll("'../shared/motion'", "'./motion.mjs'")
+      .replaceAll("'../shared/locale'", "'./locale.mjs'")
+      .replaceAll("'../shared/locale.ts'", "'./locale.mjs'")
+      .replaceAll("'../shared/system-copy'", "'./systemCopy.mjs'")
+      .replaceAll("'./locale-copy'", "'./localeCopy.mjs'");
     const { outputText } = ts.transpileModule(source, {
       compilerOptions: {
         module: ts.ModuleKind.ESNext,

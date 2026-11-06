@@ -1,3 +1,4 @@
+import { t as textForLocale } from './locale-copy';
 import { ArrivalStory, SportMotionStory, TeamMotion, PreparationMotion } from './MotionStories';
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { ArrowUpRight, ArrowRight, Plus, Download } from 'lucide-react';
@@ -5,24 +6,28 @@ import { useApp } from './context';
 import { activityPriceLabel } from '../shared/registration';
 import { Link, Page } from './ui';
 import { money } from './api';
-import { daysUntil, googleCalendarUrl, donationNotice, donationDestination } from '../shared/event';
+import { daysUntil, googleCalendarUrl, donationNotice } from '../shared/event';
+import { currentLocale } from '../shared/locale';
 import { editorial, published } from '../shared/editorial';
 import { track } from './tracking';
 import Scene from './Scene';
 import PhotoAlbum from './PhotoAlbum';
 import { participationPolicy, ageLabel } from '../shared/participation';
 const RouteMap = lazy(() => import('./RouteMap'));
+const PublicImpact = lazy(() =>
+  import('./Impact').then((module) => ({ default: module.PublicImpact })),
+);
 export const eventDate = (s: any) =>
-  new Date(s.eventAt).toLocaleDateString('fr-CA', {
+  new Date(s.eventAt).toLocaleDateString(currentLocale(), {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
     timeZone: 'America/Toronto',
   });
 const sports = [
-  { id: 'velo', label: 'Vélo', verb: 'Rouler', number: '01' },
-  { id: 'course', label: 'Course', verb: 'Courir', number: '02' },
-  { id: 'marche', label: 'Marche', verb: 'Marcher', number: '03' },
+  { id: 'velo', label: textForLocale('Vélo'), verb: textForLocale('Rouler'), number: '01' },
+  { id: 'course', label: textForLocale('Course'), verb: textForLocale('Courir'), number: '02' },
+  { id: 'marche', label: textForLocale('Marche'), verb: textForLocale('Marcher'), number: '03' },
 ];
 
 export function CalendarLinks() {
@@ -30,11 +35,12 @@ export function CalendarLinks() {
   return (
     <details className="calendar-choice">
       <summary>
-        Ajouter à mon calendrier <Plus size={15} />
+        {textForLocale('Ajouter à mon calendrier ')}
+        <Plus size={15} />
       </summary>
       <div>
         <a href="/calendrier.ics" download="Ride-For-Brains.ics">
-          Télécharger le calendrier (.ics)
+          {textForLocale('Télécharger le calendrier (.ics)')}
         </a>
         <a
           href={googleCalendarUrl(data.settings, location.origin)}
@@ -61,17 +67,17 @@ function Countdown() {
     <span className="countdown">
       <b>
         {past
-          ? 'L’édition ' + new Date(data.settings.eventAt).getFullYear()
+          ? textForLocale('L’édition ') + new Date(data.settings.eventAt).getFullYear()
           : days
             ? 'J−' + days
-            : 'Aujourd’hui'}
+            : textForLocale('Aujourd’hui')}
       </b>
       <span>
         {past
-          ? 'Retrouvez notre histoire'
+          ? textForLocale('Retrouvez notre histoire')
           : days
             ? 'avant de se retrouver'
-            : 'Le jour du rendez-vous'}
+            : textForLocale('Le jour du rendez-vous')}
       </span>
     </span>
   );
@@ -86,13 +92,20 @@ function FirstEdition() {
     return null;
   return (
     <section className="first-edition editorial-section" id="premiere-edition">
-      <div className="section-index">Souvenirs / Première édition</div>
-      {e.year && <p className="edition-year">{e.year} · Première édition</p>}
+      <div className="section-index">{textForLocale('Souvenirs / Première édition')}</div>
+      {e.year && (
+        <p className="edition-year">
+          {e.year}
+          {textForLocale(' · Première édition')}
+        </p>
+      )}
       <div className="archive-heading">
         <h2>{e.title}</h2>
         {e.intro && <p>{e.intro}</p>}
       </div>
-      {photos.length > 0 && <PhotoAlbum photos={photos} label="Les souvenirs de Ride For Brains" />}
+      {photos.length > 0 && (
+        <PhotoAlbum photos={photos} label={textForLocale('Les souvenirs de Ride For Brains')} />
+      )}
       {e.memories.length > 0 && (
         <div className="archive-memories">
           {e.memories.map((text, i) => (
@@ -112,7 +125,7 @@ function FirstEdition() {
       )}
       {e.press.length > 0 && (
         <div className="press-links">
-          <h3>Dans les médias</h3>
+          <h3>{textForLocale('Dans les médias')}</h3>
           {e.press.map((p) => (
             <a key={p.url} href={p.url} target="_blank" rel="noopener noreferrer">
               {p.title} <ArrowUpRight size={16} />
@@ -177,7 +190,7 @@ function IdentityPair() {
         src="/assets/ride-for-brains.png"
         width="110"
         height="110"
-        alt="Ride For Brains, deuxième édition"
+        alt={textForLocale('Ride For Brains, deuxième édition')}
       />
       <span aria-hidden="true">+</span>
       <img
@@ -230,7 +243,7 @@ export function Home() {
           <span>
             {s.edition} / {eventDate(s)}
           </span>
-          <span>Vélo · Course · Marche</span>
+          <span>{textForLocale('Vélo · Course · Marche')}</span>
         </div>
         <div className="opening-grid">
           <div className="opening-copy">
@@ -247,14 +260,15 @@ export function Home() {
             <p className="hero-essentials">
               <strong>{activityPriceLabel(data.activities)}</strong>
               <span>
-                par activité · Vélo 18+
+                {textForLocale('par activité · Vélo 18+')}
                 <br />
-                Course et marche : tous les âges, accord parental avant 18 ans
+                {textForLocale('Course et marche : tous les âges, accord parental avant 18 ans')}
               </span>
             </p>
             <div className="actions">
               <Link to="/activites" className="button">
-                Choisir mon activité <ArrowUpRight size={18} />
+                {textForLocale('Choisir mon activité ')}
+                <ArrowUpRight size={18} />
               </Link>
               <a
                 className="text-link"
@@ -262,12 +276,13 @@ export function Home() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Soutenir la collecte Ride For Brains <ArrowUpRight size={16} />
+                {textForLocale('Soutenir la collecte Ride For Brains ')}
+                <ArrowUpRight size={16} />
               </a>
             </div>
             {e.heroIntro.length > 240 && (
               <details className="hero-introduction">
-                <summary>L’esprit de l’événement</summary>
+                <summary>{textForLocale('L’esprit de l’événement')}</summary>
                 <p className="opening-intro">{e.heroIntro}</p>
               </details>
             )}
@@ -286,19 +301,19 @@ export function Home() {
                   decoding="async"
                 />
                 <figcaption>
-                  <Link to="/equipe">Découvrir la première édition</Link>
+                  <Link to="/equipe">{textForLocale('Découvrir la première édition')}</Link>
                 </figcaption>
               </figure>
             )}
           </div>
           <div className="opening-visual">
             <div className="neural-coordinate" aria-hidden="true">
-              RFB / Connexions en mouvement
+              {textForLocale('RFB / Connexions en mouvement')}
             </div>
             <Scene />
             <div className="visual-caption">
-              <Link to="/cause">Comprendre la cause ↗</Link>
-              <span>Vélo / Course / Marche</span>
+              <Link to="/cause">{textForLocale('Comprendre la cause ↗')}</Link>
+              <span>{textForLocale('Vélo / Course / Marche')}</span>
             </div>
           </div>
         </div>
@@ -306,32 +321,39 @@ export function Home() {
       <section className="editorial-section activities-narrative" id="activites">
         <div className="editorial-heading">
           <div>
-            <p className="section-index">Trois façons de participer</p>
-            <h2>À chacun son mouvement.</h2>
+            <p className="section-index">{textForLocale('Trois façons de participer')}</p>
+            <h2>{textForLocale('À chacun son mouvement.')}</h2>
           </div>
           <Link to="/participants" className="text-link">
-            Voir qui prend le départ <ArrowRight size={17} />
+            {textForLocale('Voir qui prend le départ ')}
+            <ArrowRight size={17} />
           </Link>
         </div>
         <SportRows />
       </section>
+      {s.impact && ['km', 'participants', 'teams', 'volunteers'].some((key) => s.impact[key]) && (
+        <Suspense fallback={null}>
+          <PublicImpact embedded />
+        </Suspense>
+      )}
       <section className="home-practical">
         <div>
-          <span>Le rendez-vous</span>
+          <span>{textForLocale('Le rendez-vous')}</span>
           <strong>{eventDate(s)}</strong>
         </div>
         <div>
-          <span>Accueil dès</span>
+          <span>{textForLocale('Accueil dès')}</span>
           <strong>{s.reception.replace(':', ' h ')}</strong>
         </div>
         {s.location && (
           <div>
-            <span>Lieu</span>
+            <span>{textForLocale('Lieu')}</span>
             <strong>{s.location}</strong>
           </div>
         )}
         <Link to="/infos" className="text-link">
-          Préparer ma journée <ArrowRight size={17} />
+          {textForLocale('Préparer ma journée ')}
+          <ArrowRight size={17} />
         </Link>
       </section>
     </>
@@ -349,27 +371,31 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
   return (
     <Page
       className="activities-page"
-      eyebrow={focus ? group?.label : 'Vélo, course et marche'}
+      eyebrow={focus ? group?.label : textForLocale('Vélo, course et marche')}
       title={
         focus
           ? group?.label + ' · ' + focus.distance
           : group
             ? group.verb + '. À votre façon.'
-            : 'Choisissez votre mouvement.'
+            : textForLocale('Choisissez votre mouvement.')
       }
-      intro={eventDate(data.settings) + ' · ' + (kind ? ageLabel(kind) : participationPolicy)}
+      intro={
+        eventDate(data.settings) +
+        ' · ' +
+        textForLocale(kind ? ageLabel(kind) : participationPolicy)
+      }
     >
       {kind && (
         <div className="sport-page-scene">
           <Scene mode={kind as any} />
         </div>
       )}
-      <nav className="activity-tabs" aria-label="Choisir un sport">
+      <nav className="activity-tabs" aria-label={textForLocale('Choisir un sport')}>
         {[
-          ['/activites', 'Toutes les activités'],
-          ['/velo', 'Vélo'],
-          ['/course', 'Course'],
-          ['/marche', 'Marche'],
+          ['/activites', textForLocale('Toutes les activités')],
+          ['/velo', textForLocale('Vélo')],
+          ['/course', textForLocale('Course')],
+          ['/marche', textForLocale('Marche')],
         ].map(([url, label]) => (
           <Link
             to={url}
@@ -396,68 +422,73 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                   <h3>{a.name}</h3>
                   {a.capacity !== null && (
                     <p className="small">
-                      {Math.max(0, a.capacity - a.occupied)} place(s) disponible(s)
+                      {Math.max(0, a.capacity - a.occupied)}
+                      {textForLocale(' place(s) disponible(s)')}
                     </p>
                   )}
                   {a.capacity === null && data.settings.registrationOpen && (
-                    <p className="small">Inscriptions ouvertes</p>
+                    <p className="small">{textForLocale('Inscriptions ouvertes')}</p>
                   )}
                 </div>
                 <div className="activity-ledger-actions">
                   <strong>{money(a.price)}</strong>
-                  <span className="small">par personne et par activité</span>
+                  <span className="small">{textForLocale('par personne et par activité')}</span>
                   <Link
                     className="button"
                     to={(full ? '/attente' : '/inscription') + '?activite=' + a.id}
                   >
-                    {full ? 'Rejoindre la liste d’attente' : 'S’inscrire'}{' '}
+                    {full
+                      ? textForLocale('Rejoindre la liste d’attente')
+                      : textForLocale('S’inscrire')}{' '}
                     <ArrowUpRight size={17} />
                   </Link>
                   <Link className="text-link" to={'/participants?activite=' + a.id}>
-                    Voir les participants <ArrowRight size={15} />
+                    {textForLocale('Voir les participants ')}
+                    <ArrowRight size={15} />
                   </Link>
                   {!focus && (
                     <Link className="text-link" to={'/activites/' + a.id}>
-                      Voir cette activité <ArrowRight size={15} />
+                      {textForLocale('Voir cette activité ')}
+                      <ArrowRight size={15} />
                     </Link>
                   )}
                 </div>
                 {focus && (
                   <div className="activity-detail">
-                    <h3>Le parcours</h3>
+                    <h3>{textForLocale('Le parcours')}</h3>
                     {a.route.description ? (
                       <p>{a.route.description}</p>
                     ) : !a.route.coordinates?.length && !a.route.mapUrl ? (
-                      <p>Parcours à venir.</p>
+                      <p>{textForLocale('Parcours à venir.')}</p>
                     ) : null}
                     <dl className="route-facts">
                       {a.route.departure && (
                         <div>
-                          <dt>Départ</dt>
+                          <dt>{textForLocale('Départ')}</dt>
                           <dd>{a.route.departure.replace(':', ' h ')}</dd>
                         </div>
                       )}
                       {a.route.elevationGain != null && (
                         <div>
-                          <dt>Dénivelé positif</dt>
+                          <dt>{textForLocale('Dénivelé positif')}</dt>
                           <dd>{a.route.elevationGain} m</dd>
                         </div>
                       )}
                       {a.route.startLabel && (
                         <div>
-                          <dt>Point de départ</dt>
+                          <dt>{textForLocale('Point de départ')}</dt>
                           <dd>{a.route.startLabel}</dd>
                         </div>
                       )}
                       {a.route.finishLabel && (
                         <div>
-                          <dt>Arrivée</dt>
+                          <dt>{textForLocale('Arrivée')}</dt>
                           <dd>{a.route.finishLabel}</dd>
                         </div>
                       )}
                     </dl>
                     {a.route.coordinates?.length > 1 && (
-                      <Suspense fallback={<p>Chargement du tracé…</p>}>
+                      <Suspense fallback={<p>{textForLocale('Chargement du tracé…')}</p>}>
                         <RouteMap route={a.route} name={a.name} />
                       </Suspense>
                     )}
@@ -469,7 +500,8 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          Consulter la carte <ArrowUpRight size={16} />
+                          {textForLocale('Consulter la carte ')}
+                          <ArrowUpRight size={16} />
                         </a>
                       )}
                       {a.route.gpxUrl && (
@@ -479,7 +511,8 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          Télécharger le GPX <Download size={16} />
+                          {textForLocale('Télécharger le GPX ')}
+                          <Download size={16} />
                         </a>
                       )}
                     </div>
@@ -488,7 +521,7 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
                         photos={published<any>(data.settings.photos).filter(
                           (p) => p.section === a.sport,
                         )}
-                        label={'Photos de ' + group?.label}
+                        label={textForLocale('Photos de ') + group?.label}
                       />
                     )}
                   </div>
@@ -498,7 +531,7 @@ export function Activities({ sport, selected }: { sport?: string | null; selecte
           })}
       </div>
       {kind && <SportMotionStory sport={kind} />}
-      <p className="fee-disclosure">{donationNotice}</p>
+      <p className="fee-disclosure">{textForLocale(donationNotice)}</p>
       <CalendarLinks />
     </Page>
   );
@@ -510,17 +543,19 @@ export function Practical() {
   return (
     <Page
       className="practical-page"
-      eyebrow="Préparer sa journée"
-      title="Les repères du départ."
-      intro="Les renseignements confirmés sont réunis ici. Le reste sera ajouté à mesure que l’organisation se précise."
+      eyebrow={textForLocale('Préparer sa journée')}
+      title={textForLocale('Les repères du départ.')}
+      intro={textForLocale(
+        'Les renseignements confirmés sont réunis ici. Le reste sera ajouté à mesure que l’organisation se précise.',
+      )}
     >
       <dl className="practical-ledger">
         <div>
-          <dt>Date</dt>
+          <dt>{textForLocale('Date')}</dt>
           <dd>{eventDate(s)}</dd>
         </div>
         <div>
-          <dt>Accueil</dt>
+          <dt>{textForLocale('Accueil')}</dt>
           <dd>
             {s.reception.replace(':', ' h ')}
             {s.closing ? ' — ' + s.closing : ''}
@@ -528,13 +563,13 @@ export function Practical() {
         </div>
         {s.location && (
           <div>
-            <dt>Lieu de départ</dt>
+            <dt>{textForLocale('Lieu de départ')}</dt>
             <dd>{s.location}</dd>
           </div>
         )}
         {e.practical.find((p) => p.id === 'departs' && p.enabled && p.body) && (
           <div>
-            <dt>Départs des activités</dt>
+            <dt>{textForLocale('Départs des activités')}</dt>
             <dd>{e.practical.find((p) => p.id === 'departs' && p.enabled)?.body}</dd>
           </div>
         )}
@@ -550,7 +585,7 @@ export function Practical() {
             </section>
           ))}
         <section>
-          <h2>Les parcours</h2>
+          <h2>{textForLocale('Les parcours')}</h2>
           {data.activities.map((a) => (
             <article className="practical-route" key={a.id}>
               <h3>
@@ -559,31 +594,36 @@ export function Practical() {
               <p>
                 {a.route.description ||
                   (a.route.coordinates?.length > 1 || a.route.mapUrl || a.route.gpxUrl
-                    ? 'Parcours disponible.'
-                    : 'Parcours à venir.')}
+                    ? textForLocale('Parcours disponible.')
+                    : textForLocale('Parcours à venir.'))}
               </p>
               {a.route.supplies?.length > 0 && (
-                <p>Ravitaillements : {a.route.supplies.join(' · ')}</p>
+                <p>
+                  {textForLocale('Ravitaillements : ')}
+                  {a.route.supplies.join(' · ')}
+                </p>
               )}
               <Link to={'/activites/' + a.id} className="text-link">
                 {a.route.coordinates?.length > 1 || a.route.mapUrl
-                  ? 'Voir la carte du parcours'
-                  : 'Informations sur cette activité'}{' '}
+                  ? textForLocale('Voir la carte du parcours')
+                  : textForLocale('Informations sur cette activité')}{' '}
                 <ArrowRight size={15} />
               </Link>
             </article>
           ))}
         </section>
         <section>
-          <h2>Votre billet</h2>
+          <h2>{textForLocale('Votre billet')}</h2>
           <p>
-            Votre billet sera disponible dans votre espace après confirmation du paiement. Présentez
-            son code QR à l’accueil.
+            {textForLocale(
+              'Votre billet sera disponible dans votre espace après confirmation du paiement. Présentez son code QR à l’accueil.',
+            )}
           </p>
         </section>
       </div>
       <Link to="/faq" className="text-link">
-        D’autres questions ? <ArrowRight size={16} />
+        {textForLocale('D’autres questions ? ')}
+        <ArrowRight size={16} />
       </Link>
       <ArrivalStory />
       <PreparationMotion />
@@ -595,8 +635,8 @@ export function Team() {
   return (
     <Page
       className="team-page"
-      eyebrow="L’équipe"
-      title="Derrière la ligne de départ."
+      eyebrow={textForLocale('L’équipe')}
+      title={textForLocale('Derrière la ligne de départ.')}
       intro={data.settings.story}
     >
       <TeamMotion />
@@ -604,7 +644,7 @@ export function Team() {
       <FirstEdition />
       {published(editorial(data.settings).media).length > 0 && (
         <section className="media-coverage">
-          <h2>Ils parlent de Ride For Brains</h2>
+          <h2>{textForLocale('Ils parlent de Ride For Brains')}</h2>
           {published(editorial(data.settings).media).map((m, i) => (
             <article key={i}>
               {m.logo && <img src={m.logo} alt={m.name} width="160" height="80" loading="lazy" />}
@@ -628,19 +668,21 @@ export function Team() {
         photos={published<any>(data.settings.photos).filter(
           (p) => p.section === 'depart' || p.section === 'arrivee',
         )}
-        label="Le départ et l’arrivée en images"
+        label={textForLocale('Le départ et l’arrivée en images')}
       />
       <div className="actions">
         <Link to="/contact" className="button">
-          Nous écrire <ArrowUpRight size={17} />
+          {textForLocale('Nous écrire ')}
+          <ArrowUpRight size={17} />
         </Link>
         <Link to="/benevolat" className="text-link">
-          Donner un coup de main <ArrowRight size={17} />
+          {textForLocale('Donner un coup de main ')}
+          <ArrowRight size={17} />
         </Link>
       </div>
       <PhotoAlbum
         photos={published<any>(data.settings.photos).filter((p) => p.section === 'equipe')}
-        label="L’équipe en images"
+        label={textForLocale('L’équipe en images')}
       />
     </Page>
   );
@@ -650,8 +692,8 @@ export function Cause() {
   return (
     <Page
       className="cause-page"
-      eyebrow="La cause"
-      title="Le mouvement, pour la recherche."
+      eyebrow={textForLocale('La cause')}
+      title={textForLocale('Le mouvement, pour la recherche.')}
       intro={data.settings.cause}
     >
       <IdentityPair />
@@ -659,20 +701,22 @@ export function Cause() {
         <div>
           <Scene mode="cortex" />
           <p className="small">
-            Les connexions du cerveau : le lien avec la recherche que soutient la collecte
-            officielle.
+            {textForLocale(
+              'Les connexions du cerveau : le lien avec la recherche que soutient la collecte officielle.',
+            )}
           </p>
         </div>
         <div>
-          <h2>Deux gestes distincts.</h2>
-          <p>{donationNotice}</p>
+          <h2>{textForLocale('Deux gestes distincts.')}</h2>
+          <p>{textForLocale(donationNotice)}</p>
           <a
             href={data.settings.donationUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="button"
           >
-            Faire un don sur Brain Canada <ArrowUpRight size={18} />
+            {textForLocale('Faire un don sur Brain Canada ')}
+            <ArrowUpRight size={18} />
           </a>
         </div>
       </div>
@@ -682,7 +726,10 @@ export function Cause() {
 export function FAQ() {
   const { data } = useApp();
   return (
-    <Page eyebrow="Les réponses utiles" title="Avant de prendre le départ.">
+    <Page
+      eyebrow={textForLocale('Les réponses utiles')}
+      title={textForLocale('Avant de prendre le départ.')}
+    >
       <div className="faq editorial-faq">
         {published<any>(data.settings.faq).map((f, i) => (
           <details key={i}>
@@ -696,7 +743,8 @@ export function FAQ() {
         ))}
       </div>
       <Link to="/contact" className="text-link">
-        Une autre question ? Écrivez-nous <ArrowRight size={16} />
+        {textForLocale('Une autre question ? Écrivez-nous ')}
+        <ArrowRight size={16} />
       </Link>
     </Page>
   );
